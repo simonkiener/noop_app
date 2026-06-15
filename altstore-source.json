@@ -18,6 +18,15 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "3.6.0",
+          "buildVersion": "86",
+          "date": "2026-06-15",
+          "localizedDescription": "New gold-on-navy app icon + Android sleep durability",
+          "downloadURL": "https://github.com/NoopApp/noop/releases/download/v3.6.0/NOOP-v3.6.0-ios.ipa",
+          "size": 7459659,
+          "minOSVersion": "17.0"
+        },
+        {
           "version": "3.5.0",
           "buildVersion": "84",
           "date": "2026-06-15",
@@ -487,12 +496,12 @@
           "NSHealthUpdateUsageDescription": "NOOP writes the metrics it computes from your strap back into Apple Health, on-device and only when you allow it."
         }
       },
-      "version": "3.5.0",
-      "buildVersion": "84",
+      "version": "3.6.0",
+      "buildVersion": "86",
       "versionDate": "2026-06-15",
-      "versionDescription": "Hand-correct sleep times + compressed .noopbak backups",
-      "downloadURL": "https://github.com/NoopApp/noop/releases/download/v3.5.0/NOOP-v3.5.0-ios.ipa",
-      "size": 13811103,
+      "versionDescription": "New gold-on-navy app icon + Android sleep durability",
+      "downloadURL": "https://github.com/NoopApp/noop/releases/download/v3.6.0/NOOP-v3.6.0-ios.ipa",
+      "size": 7459659,
       "minOSVersion": "17.0"
     }
   ],
