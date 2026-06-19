@@ -18,6 +18,15 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "5.2.4",
+          "buildVersion": "135",
+          "date": "2026-06-19",
+          "localizedDescription": "Today-card layout tidy-up (#69).",
+          "downloadURL": "https://noop.fans/NoopApp/noop/releases/download/v5.2.4/NOOP-v5.2.4-ios.ipa",
+          "size": 9202690,
+          "minOSVersion": "17.0"
+        },
+        {
           "version": "5.2.3",
           "buildVersion": "134",
           "date": "2026-06-19",
@@ -838,12 +847,12 @@
           "NSHealthUpdateUsageDescription": "NOOP writes the metrics it computes from your strap back into Apple Health, on-device and only when you allow it."
         }
       },
-      "version": "5.2.3",
-      "buildVersion": "134",
+      "version": "5.2.4",
+      "buildVersion": "135",
       "versionDate": "2026-06-19",
-      "versionDescription": "WHOOP 5/MG connection fix (#74): opening Add-a-WHOOP no longer drops a live strap.",
-      "downloadURL": "https://noop.fans/NoopApp/noop/releases/download/v5.2.3/NOOP-v5.2.3-ios.ipa",
-      "size": 9201612,
+      "versionDescription": "Today-card layout tidy-up (#69).",
+      "downloadURL": "https://noop.fans/NoopApp/noop/releases/download/v5.2.4/NOOP-v5.2.4-ios.ipa",
+      "size": 9202690,
       "minOSVersion": "17.0"
     }
   ],
