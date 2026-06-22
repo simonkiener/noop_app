@@ -17,12 +17,17 @@ import WhoopStore
 struct FullDayChartView: View {
     @EnvironmentObject var repo: Repository
 
-    /// The day this timeline opens on (its real calendar midnight). Defaults to the logical day so an
+    /// The day this timeline is showing (its real calendar midnight). Defaults to the logical day so an
     /// after-midnight open still lands on the night the user is living, not an empty new calendar day (#144).
-    let dayStart: Date
+    /// Mutable so the user can step back through previous days (#597 — was today-only with no way back).
+    @State private var dayStart: Date
+    /// True once we've done the one-shot "open on the most recent day with data" jump (or the caller pinned
+    /// an explicit day, in which case we never override it). Stops the jump from fighting manual navigation.
+    @State private var didLandOnLatest: Bool
 
     init(dayStart: Date? = nil) {
-        self.dayStart = dayStart ?? Repository.logicalDayStart(Date())
+        _dayStart = State(initialValue: dayStart ?? Repository.logicalDayStart(Date()))
+        _didLandOnLatest = State(initialValue: dayStart != nil)
     }
 
     @State private var metric: Repository.TimelineMetric = .hr
@@ -48,11 +53,13 @@ struct FullDayChartView: View {
     var body: some View {
         ScreenScaffold(title: "Deep Timeline", subtitle: "Every second of your day, zoomable.") {
             metricPills
+            dayNav
             sourcePill
             chartCard
             zoomHint
         }
         .task(id: taskKey) { await reload() }
+        .task { await landOnLatestDayIfNeeded() }
     }
 
     /// Re-read whenever the metric, the day, the source scope, the settled zoom window, or fresh strap
@@ -89,6 +96,59 @@ struct FullDayChartView: View {
         }
         .padding(.horizontal, 2)
     }
+
+    /// Day stepper — move the whole timeline back/forward a day so a user can reach the days that actually
+    /// hold their data, not just today (#597). Forward is clamped at today (no future days).
+    private var dayNav: some View {
+        HStack(spacing: 12) {
+            Button { stepDay(-1) } label: {
+                Image(systemName: "chevron.left").font(.system(size: 14, weight: .semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(StrandPalette.accent)
+            .accessibilityLabel("Previous day")
+
+            Spacer()
+            Text(dayLabel)
+                .font(StrandFont.headline)
+                .foregroundStyle(StrandPalette.textPrimary)
+                .monospacedDigit()
+            Spacer()
+
+            Button { stepDay(1) } label: {
+                Image(systemName: "chevron.right").font(.system(size: 14, weight: .semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(isOnLatestDay ? StrandPalette.textTertiary : StrandPalette.accent)
+            .disabled(isOnLatestDay)
+            .accessibilityLabel("Next day")
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private var isOnLatestDay: Bool { dayStart >= Repository.logicalDayStart(Date()) }
+
+    /// Step the shown day by `delta` days, clamped so you can never go past today, and drop any zoom so the
+    /// new day opens at full-day scale.
+    private func stepDay(_ delta: Int) {
+        let next = dayStart.addingTimeInterval(Double(delta) * 86_400)
+        if delta > 0 && next > Repository.logicalDayStart(Date()) { return }
+        withAnimation(StrandMotion.interactive) {
+            dayStart = next
+            zoomDomain = nil
+        }
+    }
+
+    private var dayLabel: String {
+        let today = Repository.logicalDayStart(Date())
+        if Calendar.current.isDate(dayStart, inSameDayAs: today) { return "Today" }
+        if Calendar.current.isDate(dayStart, inSameDayAs: today.addingTimeInterval(-86_400)) { return "Yesterday" }
+        return Self.dayFmt.string(from: dayStart)
+    }
+
+    private static let dayFmt: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "EEE d MMM"; f.locale = Locale(identifier: "en_US_POSIX"); return f
+    }()
 
     // MARK: Chart
 
@@ -201,6 +261,17 @@ struct FullDayChartView: View {
     }
 
     // MARK: Read
+
+    /// One-shot on first open: if today has no data but an earlier day does (the classic just-synced-history
+    /// case, #597), land the timeline on that most-recent day so the user sees their data instead of an empty
+    /// today. Skipped when the caller pinned an explicit day, and never fights manual navigation afterwards.
+    private func landOnLatestDayIfNeeded() async {
+        guard !didLandOnLatest else { return }
+        didLandOnLatest = true
+        if let latest = await repo.latestDataDayStart(), latest < dayStart {
+            withAnimation(StrandMotion.interactive) { dayStart = latest }
+        }
+    }
 
     private func reload() async {
         loading = true

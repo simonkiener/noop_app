@@ -51,21 +51,35 @@ fun FullDayChartScreen(vm: AppViewModel, onBack: () -> Unit) {
     val deviceId = "my-whoop"
     val recentDays by vm.recentDays.collectAsStateWithLifecycle()
 
-    // The day this opens on: today's local calendar midnight … +24h.
-    val dayBounds = remember {
+    // Today's local calendar midnight — the clamp the day stepper can never pass.
+    val todayStart = remember {
         val cal = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         }
-        val start = cal.timeInMillis / 1000
-        start..(start + 86_400)
+        cal.timeInMillis / 1000
     }
+    // The day being shown … +24h. Mutable so the user can step back to days that actually have data
+    // instead of a possibly-empty today (#597 — was today-only with no way back).
+    var dayStartSec by remember { mutableStateOf(todayStart) }
+    var didLand by remember { mutableStateOf(false) }
+    val dayBounds = dayStartSec..(dayStartSec + 86_400)
 
     var metric by remember { mutableStateOf(TimelineMetric.Hr) }
     var ownedOnly by remember { mutableStateOf(true) }
     // The visible window the gestures drive; null → the whole day.
     var window by remember { mutableStateOf<LongRange?>(null) }
     val visible = window ?: dayBounds
+
+    // #597 — one-shot: open on the most recent day that has data (lexicographic max of the yyyy-MM-dd keys
+    // is chronological), so a just-synced-history user lands on real data instead of an empty today.
+    LaunchedEffect(recentDays) {
+        if (!didLand && recentDays.isNotEmpty()) {
+            didLand = true
+            val latest = recentDays.maxByOrNull { it.day }?.day?.let { dayKeyToEpochSec(it) }
+            if (latest != null && latest < dayStartSec) { dayStartSec = latest; window = null }
+        }
+    }
 
     var points by remember { mutableStateOf<List<TimelinePoint>>(emptyList()) }
     var isRaw by remember { mutableStateOf(false) }
@@ -107,6 +121,29 @@ fun FullDayChartScreen(vm: AppViewModel, onBack: () -> Unit) {
                 selection = ownedOnly,
                 label = { if (it) "Owned" else "All" },
                 onSelect = { ownedOnly = it },
+            )
+        }
+
+        // DAY STEPPER — move the whole timeline back/forward a day (#597). Forward clamps at today.
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+        ) {
+            Text(
+                "‹", style = NoopType.title2, color = Palette.accent,
+                modifier = Modifier
+                    .clickable { dayStartSec -= 86_400; window = null }
+                    .padding(horizontal = 12.dp, vertical = 2.dp),
+            )
+            Spacer(Modifier.weight(1f))
+            Text(dayLabel(dayStartSec, todayStart), style = NoopType.headline, color = Palette.textPrimary)
+            Spacer(Modifier.weight(1f))
+            val onLatest = dayStartSec >= todayStart
+            Text(
+                "›", style = NoopType.title2, color = if (onLatest) Palette.textTertiary else Palette.accent,
+                modifier = Modifier
+                    .then(if (onLatest) Modifier else Modifier.clickable { dayStartSec += 86_400; window = null })
+                    .padding(horizontal = 12.dp, vertical = 2.dp),
             )
         }
 
@@ -284,4 +321,18 @@ private fun formatValue(metric: TimelineMetric, v: Double): String = when (metri
     TimelineMetric.Hr, TimelineMetric.Respiration, TimelineMetric.Hrv -> v.toInt().toString()
     TimelineMetric.SkinTemp -> String.format(Locale.US, "%.1f", v)
     TimelineMetric.Spo2, TimelineMetric.Motion -> String.format(Locale.US, "%.2f", v)
+}
+
+/** Parse a yyyy-MM-dd day key to its LOCAL midnight epoch-seconds, or null if unparseable (#597). */
+private fun dayKeyToEpochSec(day: String): Long? = runCatching {
+    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    sdf.timeZone = java.util.TimeZone.getDefault()
+    (sdf.parse(day)?.time ?: return null) / 1000
+}.getOrNull()
+
+/** "Today" / "Yesterday" / "Wed 18 Jun" label for the Deep Timeline day stepper (#597). */
+private fun dayLabel(dayStartSec: Long, todayStart: Long): String = when (dayStartSec) {
+    todayStart -> "Today"
+    todayStart - 86_400 -> "Yesterday"
+    else -> java.text.SimpleDateFormat("EEE d MMM", Locale.US).format(java.util.Date(dayStartSec * 1000))
 }

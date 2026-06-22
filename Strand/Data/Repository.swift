@@ -396,6 +396,15 @@ final class Repository: ObservableObject {
         return (try? await store.hrSamples(deviceId: deviceId, from: from, to: to, limit: limit)) ?? []
     }
 
+    /// Logical day-start of the most recent day the active device has HR data for, or nil when the store is
+    /// empty. Lets the Deep Timeline open on a day that actually has data instead of a possibly-empty today
+    /// right after a history sync — the #597 root cause (the timeline was today-only with no way back).
+    func latestDataDayStart() async -> Date? {
+        guard let store = await ensureStore() else { return nil }
+        guard let ts = (try? await store.latestHRSampleTs(deviceId: deviceId)) ?? nil else { return nil }
+        return Self.logicalDayStart(Date(timeIntervalSince1970: TimeInterval(ts)))
+    }
+
     /// Downsampled HR (mean bpm per `bucketSeconds`) for the strap, for a Today/24h trend chart.
     /// Aggregated in SQL so a full day never loads the raw ~1 Hz rows.
     func hrBuckets(from: Int, to: Int, bucketSeconds: Int = 300) async -> [HRBucket] {
