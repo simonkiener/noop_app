@@ -17,6 +17,14 @@ approximate; downloads are on the [Releases](https://github.com/NoopApp/noop/rel
 
 ---
 
+## 6.1.1 — Fix: a night with a brief wake-up showed as separate naps (all platforms)
+
+A focused follow-up to the 6.1.0 sleep rebuild. If you stirred briefly overnight, the **Sleep tab** could split that one continuous night into a "main" sleep plus one or two phantom naps, even though your recovery and your Today total were already correct (only the tab disagreed). The Sleep tab now resolves your main night the same way the rest of the app does: it stitches a briefly-interrupted or biphasic night's fragments back into one continuous sleep, and only genuinely separate blocks (like an afternoon nap) are shown as naps. The hero now reflects the whole night, so every screen agrees.
+
+Thanks to **pilleuspulcher** for the strap log that pinned it down. Reported in #555.
+
+---
+
 ## 6.1.0 — Smarter sleep, naps, more devices, and a big board-clear (all platforms)
 
 A large update built from the open issues, discussions and community PRs, cross-referenced so related reports were fixed together rather than one at a time.

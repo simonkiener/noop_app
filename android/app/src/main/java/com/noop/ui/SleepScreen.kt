@@ -280,7 +280,8 @@ fun SleepScreen(
     // latest-anchored, matching iOS SleepView. `selectedDay` re-points only the hero. Model is null
     // when the selected day has no stage minutes. (#5)
     val model = remember(days, night, imported) {
-        buildSleepModel(days, night?.session, imported, selectedDay = night?.dayKey)
+        buildSleepModel(days, night?.session, imported, selectedDay = night?.dayKey,
+            heroStages = night?.groupStages, heroSegments = night?.groupSegments)
     }
     val display = remember(model, night) { heroDisplay(model, night) }
 
@@ -2030,6 +2031,11 @@ internal data class HeroNight(
     val realSegments: List<Pair<String, Float>>?,
     val clockLabel: String,
     val napBlocks: List<SleepSession> = emptyList(),
+    // The bridged main-night GROUP (#561): summed stage minutes + the full-night segments, when the night
+    // is more than one fragment. `session` above stays the single WINNING block (the edit anchor); these
+    // let buildSleepModel render the WHOLE night instead of one fragment (#555). Null for a single-block day.
+    val groupStages: StageMins? = null,
+    val groupSegments: List<PersistedSegment>? = null,
 )
 
 /** What the hero card draws for the selected night — null means no usable stage data
@@ -2069,17 +2075,32 @@ internal fun selectNight(
     val dayIdx = offset.coerceIn(0, navDays.size - 1)
     val blocks = navDays[dayIdx]
     val session = mainSleepBlock(blocks, habitualMidsleepSec) ?: return null
-    // Everything else on the day is a nap / secondary block, oldest→newest for the naps card. (#518)
-    val napBlocks = blocks.filter { it.startTs != session.startTs }
+    // The day's MAIN sleep is the bridged main-night GROUP (#561): a briefly-interrupted / biphasic night's
+    // sibling fragments belong to the night, NOT the naps card — only blocks OUTSIDE the group are naps.
+    // `session` stays the single WINNING block (the durable-edit anchor at SleepTimeEditor), but the group
+    // drives the naps split, the hero's summed stage minutes, and the full-night hypnogram, so the tab
+    // matches AnalyticsEngine.analyzeDay instead of rendering phantom naps (#555). A single-block day is
+    // byte-identical to the prior behaviour. (#518/#555/#561)
+    val group = mainSleepGroup(blocks, habitualMidsleepSec)
+    val groupStarts = group.map { it.startTs }.toHashSet()
+    val napBlocks = blocks.filter { it.startTs !in groupStarts }
         .sortedBy { it.effectiveStartTs }
     val utcKey = AnalyticsEngine.dayString(session.endTs)
     val localKey = localDayString(session.endTs)
     val dayKey = listOf(utcKey, localKey).firstOrNull { key ->
         days.any { it.day == key && (it.deepMin ?: 0.0) + (it.remMin ?: 0.0) + (it.lightMin ?: 0.0) > 0.0 }
     } ?: utcKey
-    val segments = parsePersistedSegments(session.stagesJSON)
+    // Lay every fragment's persisted segments end-to-end so a biphasic night draws as one continuous
+    // hypnogram, and SUM their stage minutes for the hero. Null for a single-block day → prior behaviour.
+    val groupSegments = if (group.size > 1) {
+        group.flatMap { parsePersistedSegments(it.stagesJSON).orEmpty() }
+            .sortedBy { it.start }
+            .takeIf { it.size >= 2 }
+    } else null
+    val groupStages = if (group.size > 1) sumGroupStages(group) else null
+    val segments = (groupSegments ?: parsePersistedSegments(session.stagesJSON))
         ?.map { seg -> seg.stage to ((seg.end - seg.start) / 60f) }
-    return HeroNight(session, dayKey, segments, sessionClockLabel(session), napBlocks)
+    return HeroNight(session, dayKey, segments, sessionClockLabel(session), napBlocks, groupStages, groupSegments)
 }
 
 /**
@@ -2088,9 +2109,10 @@ internal fun selectNight(
  * (asleep span + alignment bonus on each block's EFFECTIVE onset) rather than a re-derived overnight
  * gate, so the hero, the edit affordance, the analytics total, and the Sleep tab ALL resolve to the
  * identical block (the whole point of #525/#547). Scores on each block's EFFECTIVE onset (what the user
- * sees) and returns the owning session. No selector-side gap-bridge — the engine doesn't bridge at this
- * seam either (the stager already bridged), so selecting over the blocks as-is keeps the UI byte-aligned
- * with the analytics pick. [habitualMidsleepSec] is the SAME learned value the engine threads into the
+ * sees) and returns the owning session. This is the BARE single-block pick (the durable-edit anchor): the
+ * HERO display and the nap split use [mainSleepGroup], which bridges the winner's adjacent fragments into
+ * ONE night (#561) so a biphasic night isn't shown as phantom naps (#555). [habitualMidsleepSec] is the
+ * SAME learned value the engine threads into the
  * persisted totals (loaded via `vm.repo.habitualMidsleepSec`), so a shift/late sleeper's hero and analytics
  * total resolve to the identical block; null keeps the cold-start overnight-band bonus, which matches a
  * cold-start engine run. Mirrors iOS SleepView.mainNightSession. (#518/#547)
@@ -2103,6 +2125,36 @@ internal fun mainSleepBlock(blocks: List<SleepSession>, habitualMidsleepSec: Lon
         habitualMidsleepSec,
     ) ?: return null
     return blocks[idx]
+}
+
+/**
+ * The day's MAIN-night GROUP — the winning block PLUS any adjacent fragments bridged into it (a wake gap
+ * shorter than [SleepStageTotals.gapBridgeMaxMin]), so a briefly-interrupted / biphasic night reads as ONE
+ * continuous sleep exactly the way AnalyticsEngine.analyzeDay rolls it up for the daily total (#561). The
+ * hero aggregates this whole group and ONLY blocks outside it are naps; without it the tab used the
+ * un-bridged single-block pick and rendered the bridged siblings as phantom naps (#555). A night with no
+ * bridgeable gap collapses to the single block [mainSleepBlock] picks. Returns ascending by effective
+ * onset. Mirrors iOS SleepView.mainNightGroup. (#561/#555)
+ */
+internal fun mainSleepGroup(blocks: List<SleepSession>, habitualMidsleepSec: Long? = null): List<SleepSession> {
+    val idx = SleepStageTotals.mainNightGroupIndices(
+        blocks.map { SleepStageTotals.NightBlock(it.effectiveStartTs, it.endTs) },
+        uiTzOffsetSec(),
+        habitualMidsleepSec,
+    ) ?: return emptyList()
+    return idx.map { blocks[it] }.sortedBy { it.effectiveStartTs }
+}
+
+/** SUM the per-stage minutes across a bridged main-night group, so the hero's stage breakdown reflects the
+ *  WHOLE night (#561) instead of one fragment (#555). The inter-fragment wake gap belongs to no fragment,
+ *  so it is excluded exactly as AnalyticsEngine excludes it. Null if no fragment has parseable stages. */
+private fun sumGroupStages(group: List<SleepSession>): StageMins? {
+    var aw = 0.0; var li = 0.0; var dp = 0.0; var rm = 0.0; var any = false
+    for (frag in group) {
+        val s = parseSessionStages(frag.stagesJSON) ?: continue
+        aw += s.awake; li += s.light; dp += s.deep; rm += s.rem; any = true
+    }
+    return if (any) StageMins(aw, li, dp, rm) else null
 }
 
 /** The device's current UTC offset (seconds east), evaluated per pick, fed to the selector's `offsetSec`
@@ -2142,7 +2194,7 @@ internal fun stagesFromSegments(segments: List<Pair<String, Float>>): Stages? {
     return if (s.total > 0.0) s else null
 }
 
-private data class StageMins(val awake: Double, val light: Double, val deep: Double, val rem: Double)
+internal data class StageMins(val awake: Double, val light: Double, val deep: Double, val rem: Double)
 
 /**
  * Extract stage minute counts from a session's stagesJSON, handling both formats:
@@ -2200,6 +2252,11 @@ internal fun buildSleepModel(
     session: SleepSession?,
     imported: ImportedSleepSeries = ImportedSleepSeries(),
     selectedDay: String? = null,
+    // The bridged main-night GROUP's summed stage minutes + full-night segments (#561), threaded from
+    // selectNight so a biphasic night's hero shows the WHOLE night, not one fragment (#555). Null for a
+    // single-block day → the session/DailyMetric path below is unchanged.
+    heroStages: StageMins? = null,
+    heroSegments: List<PersistedSegment>? = null,
 ): SleepModel? {
     val effectiveDay = selectedDay ?: days.lastOrNull()?.day ?: return null
     // The HERO night = the selected day's stage-bearing row. The TILE / debt / need / trend
@@ -2218,9 +2275,9 @@ internal fun buildSleepModel(
     val sessionStageMins = session
         ?.takeIf { AnalyticsEngine.dayString(it.endTs) == latest.day || localDayString(it.endTs) == latest.day }
         ?.let { parseSessionStages(it.stagesJSON) }
-    val deep = sessionStageMins?.deep ?: latest.deepMin ?: 0.0
-    val rem = sessionStageMins?.rem ?: latest.remMin ?: 0.0
-    val light = sessionStageMins?.light ?: latest.lightMin ?: 0.0
+    val deep = heroStages?.deep ?: sessionStageMins?.deep ?: latest.deepMin ?: 0.0
+    val rem = heroStages?.rem ?: sessionStageMins?.rem ?: latest.remMin ?: 0.0
+    val light = heroStages?.light ?: sessionStageMins?.light ?: latest.lightMin ?: 0.0
 
     // Hero awake estimate works off ASLEEP minutes (totalSleepMin), never the in-bed window. The
     // old code substituted the edited session's (wake − onset) duration — TIME IN BED — for the
@@ -2308,12 +2365,13 @@ internal fun buildSleepModel(
     // near-midnight-UTC wake only matches via the local key; selectNight attributes the
     // night the same way). A non-matching session degrades safely to synthesis, never to
     // a wrong night. (#160)
-    val realSegments = session
-        ?.takeIf {
-            AnalyticsEngine.dayString(it.endTs) == latest.day || localDayString(it.endTs) == latest.day
-        }
-        ?.let { parsePersistedSegments(it.stagesJSON) }
-        ?.map { seg -> seg.stage to ((seg.end - seg.start) / 60f) }
+    val realSegments = heroSegments?.map { seg -> seg.stage to ((seg.end - seg.start) / 60f) }
+        ?: session
+            ?.takeIf {
+                AnalyticsEngine.dayString(it.endTs) == latest.day || localDayString(it.endTs) == latest.day
+            }
+            ?.let { parsePersistedSegments(it.stagesJSON) }
+            ?.map { seg -> seg.stage to ((seg.end - seg.start) / 60f) }
 
     // Rolling 14-night sleep-debt ledger over the FULL day history (the analytics caps to the
     // most-recent 14 counted nights and skips no-data nights), using the SAME personal need the

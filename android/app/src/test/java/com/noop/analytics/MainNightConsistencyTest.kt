@@ -49,6 +49,36 @@ class MainNightConsistencyTest {
         assertEquals(1, SleepStageTotals.mainNightIndex(blocks, 0L))
     }
 
+    /** #555 regression: a biphasic / briefly-interrupted main night (fragments split by short wakes)
+     *  resolves to ONE bridged GROUP containing ALL its fragments, while a distant afternoon nap stays
+     *  OUTSIDE it. The Sleep tab classifies naps as "not in this group" and aggregates the group for the
+     *  hero, so the bridged siblings are no longer rendered as phantom naps ("three naps instead of a
+     *  continuous sleep"). Mirrors Swift testBiphasicNightGroupsAllFragmentsAndExcludesNap. */
+    @Test
+    fun biphasicNightGroupsAllFragmentsAndExcludesNap() {
+        val f1 = atHour(23) - 86_400L          // 23:00–01:00
+        val f2 = atMin(1, 40)                  // 01:40–04:00 (40 min gap → bridges)
+        val f3 = atMin(4, 30)                  // 04:30–07:00 (30 min gap → bridges)
+        val nap = atHour(14)                   // 14:00–15:00 (7 h gap → does NOT bridge)
+        val blocks = listOf(
+            SleepStageTotals.NightBlock(f1, f1 + 2 * 3600),
+            SleepStageTotals.NightBlock(f2, f2 + 140 * 60),
+            SleepStageTotals.NightBlock(f3, f3 + 150 * 60),
+            SleepStageTotals.NightBlock(nap, nap + 3600),
+        )
+        assertEquals(
+            "all three bridged night fragments are the main group; the afternoon nap is excluded",
+            listOf(0, 1, 2), SleepStageTotals.mainNightGroupIndices(blocks, 0L),
+        )
+        val single = SleepStageTotals.mainNightIndex(blocks, 0L)
+        assertNotNull(single)
+        assertTrue("the bare winner is one of the night fragments, never the nap", single!! in listOf(0, 1, 2))
+        assertTrue(
+            "the afternoon nap is never in the main-night group",
+            SleepStageTotals.mainNightGroupIndices(blocks, 0L)?.contains(3) == false,
+        )
+    }
+
     @Test
     fun mainNightEmptyAndTieAreDeterministic() {
         assertNull(SleepStageTotals.mainNightIndex(emptyList(), 0L))

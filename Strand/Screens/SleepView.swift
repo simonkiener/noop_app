@@ -399,14 +399,16 @@ struct SleepView: View {
     /// never touches the night's main hypnogram and the awake daytime is never mislabelled as light sleep.
     @ViewBuilder
     private func napSection(_ night: Night) -> some View {
-        // The main block is the night's main sleep (the `editTarget`); everything else on the day is a
-        // nap. The day's Rest total sums BOTH (AnalyticsEngine), so the summary line makes the split
-        // explainable: Main X / Nap(s) Y / Total Z. (#508, #518)
-        let main = night.editTarget
+        // The day's main sleep is the bridged main-night GROUP (#561): a briefly-interrupted / biphasic
+        // night's sibling fragments are part of the night, NOT naps. Only blocks OUTSIDE that group are
+        // naps. This matches the hero and AnalyticsEngine.analyzeDay; the old `!= editTarget.startTs` split
+        // labelled the bridged siblings as phantom naps (#555). The summary stays explainable: Main X /
+        // Nap(s) Y / Total Z, with Main = the whole bridged night. (#508, #518, #555)
+        let groupStarts = night.mainGroupStarts
         let naps = night.sourceBlocks
-            .filter { $0.startTs != main?.startTs }
+            .filter { !groupStarts.contains($0.startTs) }
             .sorted { $0.effectiveStartTs < $1.effectiveStartTs }
-        let mainMin = main.map { Double($0.endTs - $0.effectiveStartTs) / 60.0 } ?? 0
+        let mainMin = night.stages.total
         let napMin = naps.reduce(0.0) { $0 + Double($1.endTs - $1.effectiveStartTs) / 60.0 }
         NoopCard(padding: 14, tint: StrandPalette.restColor) {
             VStack(alignment: .leading, spacing: 12) {
@@ -1184,19 +1186,36 @@ struct SleepView: View {
     /// the duplicated, DST-fragile gate the audit flagged. (#547)
     static var tzOffsetSec: Int { TimeZone.current.secondsFromGMT() }
 
-    /// THE one main-night pick for the Sleep UI, shared by `mainBlock`, `editTarget`, and the nap split,
-    /// so all three agree with `AnalyticsEngine.analyzeDay`. Scores by learned timing on each block's
-    /// EFFECTIVE onset (what the user sees) and returns the owning session. No selector-side gap-bridge —
-    /// the engine doesn't bridge at this seam either (the stager already bridged), so selecting over the
-    /// blocks as-is keeps the UI byte-aligned with the analytics pick. `habitualMidsleepSec` is the SAME
-    /// learned value the engine threads into the persisted totals (loaded via `repo.habitualMidsleepSec()`),
-    /// so a shift/late sleeper's hero and analytics total resolve to the identical block; nil keeps the
-    /// cold-start overnight-band bonus, which matches a cold-start engine run. (#525 / #547)
+    /// The day's single WINNING main block — the durable-edit anchor (`editTarget`) and the one block whose
+    /// learned-timing score won. Scores by learned timing on each block's EFFECTIVE onset (what the user
+    /// sees) and returns the owning session. This is the BARE single-block pick (no gap-bridge), because the
+    /// edit affordance writes against ONE real row so it must resolve to one block. The HERO display and the
+    /// nap split do NOT use this alone: they use `mainNightGroup`, which bridges the winner's adjacent
+    /// fragments (a wake gap shorter than `gapBridgeMaxMin`) into ONE night the way `AnalyticsEngine`
+    /// does (#561), so a biphasic / briefly-interrupted night is shown as one continuous sleep instead of
+    /// phantom naps (#555). `habitualMidsleepSec` is the SAME learned value the engine threads into the
+    /// persisted totals (loaded via `repo.habitualMidsleepSec()`), so a shift/late sleeper's pick matches
+    /// the analytics rollup; nil keeps the cold-start overnight-band bonus. (#525 / #547 / #561)
     static func mainNightSession(_ sessions: [CachedSleepSession],
                                  habitualMidsleepSec: Int? = nil) -> CachedSleepSession? {
         SleepStageTotals.mainNightIndex(
             sessions.map { SleepStageTotals.NightBlock(start: $0.effectiveStartTs, end: $0.endTs) },
             offsetSec: tzOffsetSec, habitualMidsleepSec: habitualMidsleepSec).map { sessions[$0] }
+    }
+
+    /// The day's MAIN-night GROUP — the winning block PLUS any adjacent fragments bridged into it (a wake
+    /// gap shorter than `gapBridgeMaxMin`), so a briefly-interrupted / biphasic night reads as ONE
+    /// continuous sleep exactly the way `AnalyticsEngine.analyzeDay` rolls it up for the daily total (#561).
+    /// The hero aggregates this whole group and ONLY blocks outside it are naps. Without it the tab used the
+    /// un-bridged single-block pick and rendered the bridged siblings as phantom naps (#555). A night with
+    /// no bridgeable gap collapses to the single block `mainNightSession` picks, so the common case is byte-
+    /// identical. Returns ascending by effective onset. (#561 / #555)
+    static func mainNightGroup(_ sessions: [CachedSleepSession],
+                               habitualMidsleepSec: Int? = nil) -> [CachedSleepSession] {
+        guard let idx = SleepStageTotals.mainNightGroupIndices(
+            sessions.map { SleepStageTotals.NightBlock(start: $0.effectiveStartTs, end: $0.endTs) },
+            offsetSec: tzOffsetSec, habitualMidsleepSec: habitualMidsleepSec) else { return [] }
+        return idx.map { sessions[$0] }.sorted { $0.effectiveStartTs < $1.effectiveStartTs }
     }
 
     /// Soft nap-duration hint retained for callers/tests; the nap CLASSIFICATION is now purely "not the
@@ -1234,32 +1253,37 @@ struct SleepView: View {
         }
     }
 
-    /// Build the hero `Night` for a day around its MAIN sleep block (#518) — NOT a merge of the whole
-    /// day. Merging an overnight + an afternoon nap produced one impossible 1 AM→5 PM block; instead the
-    /// hero shows the main night's real hypnogram, and the naps card lists the rest. Stage minutes,
-    /// timeline, efficiency, and the editable window all come from the main block; `sourceBlocks` keeps
-    /// every block so the naps card and the daily Main/Nap/Total summary can read them. The day's Rest
-    /// total still SUMS all blocks (AnalyticsEngine) — this only fixes what the Sleep screen DISPLAYS.
-    /// Returns nil if the main block decodes to no usable stages. (#170, #318, #518)
+    /// Build the hero `Night` for a day around its MAIN-night GROUP — the winning block PLUS any fragments
+    /// a brief wake split it into, bridged the way `AnalyticsEngine.analyzeDay` bridges them (#561), so a
+    /// biphasic / interrupted night shows as ONE continuous sleep whose total matches the day's headline.
+    /// It does NOT merge the whole day: an afternoon nap sits OUTSIDE the bridged group (its gap exceeds
+    /// `gapBridgeMaxMin`), so it never folds in and stays a nap (the impossible 1 AM→5 PM merge #518 guarded
+    /// against). Stage minutes are SUMMED over the group (the inter-fragment wake gap belongs to no
+    /// fragment, so it is excluded from the minutes exactly as the engine excludes it), the hypnogram lays
+    /// each fragment's real timeline end-to-end, and `sourceBlocks` keeps every block so the naps card and
+    /// the daily Main/Nap/Total summary can read them. A single-block day is byte-identical to the prior
+    /// behaviour. Returns nil if the group decodes to no usable stages. (#170, #318, #518, #555, #561)
     private func mergeDay(_ sessions: [CachedSleepSession]) -> Night? {
-        guard let main = mainBlock(sessions) else { return nil }
-        // Use the EFFECTIVE onset (the user's corrected bedtime when present) so the night's timeline
-        // base, the "Asleep" label, and the hypnogram clock all reflect the edit. (#318)
-        let onset = main.effectiveStartTs, wake = main.endTs
+        let group = SleepView.mainNightGroup(sessions, habitualMidsleepSec: habitualMidsleepSec)
+        // Earliest fragment's EFFECTIVE onset (corrected bedtime when present) to the latest wake. (#318)
+        guard let first = group.first, let last = group.last else { return nil }
+        let onset = first.effectiveStartTs, wake = last.endTs
         var stages = Stages(awake: 0, light: 0, deep: 0, rem: 0)
         var segs: [SleepInterval] = []
-        if let seg = decodeSegments(main.stagesJSON, sessionStart: main.effectiveStartTs), seg.stages.total > 0 {
-            stages.awake += seg.stages.awake; stages.light += seg.stages.light
-            stages.deep  += seg.stages.deep;  stages.rem   += seg.stages.rem
-            for iv in seg.intervals {
-                segs.append(SleepInterval(stage: iv.stage, start: iv.start, end: iv.end))
+        for frag in group {
+            if let seg = decodeSegments(frag.stagesJSON, sessionStart: frag.effectiveStartTs), seg.stages.total > 0 {
+                stages.awake += seg.stages.awake; stages.light += seg.stages.light
+                stages.deep  += seg.stages.deep;  stages.rem   += seg.stages.rem
+                for iv in seg.intervals {
+                    segs.append(SleepInterval(stage: iv.stage, start: iv.start, end: iv.end))
+                }
+            } else if let st = decodeStages(frag.stagesJSON), st.total > 0 {
+                stages.awake += st.awake; stages.light += st.light
+                stages.deep  += st.deep;  stages.rem   += st.rem
             }
-        } else if let st = decodeStages(main.stagesJSON), st.total > 0 {
-            stages.awake += st.awake; stages.light += st.light
-            stages.deep  += st.deep;  stages.rem   += st.rem
         }
         guard stages.asleep > 0 else { return nil }
-        let eff = main.efficiency ?? (stages.total > 0 ? stages.asleep / stages.total : nil)
+        let eff = stages.total > 0 ? stages.asleep / stages.total : nil
         let synth = CachedSleepSession(startTs: onset, endTs: wake, efficiency: eff,
                                        restingHr: nil, avgHrv: nil, stagesJSON: nil)
         let realSegs = segs.count >= 2 ? segs.sorted { $0.start < $1.start } : nil
@@ -1766,6 +1790,14 @@ private struct Night {
     /// affordance is then hidden. (#318, #518, #547)
     var editTarget: CachedSleepSession? {
         SleepView.mainNightSession(sourceBlocks, habitualMidsleepSec: habitualMidsleepSec)
+    }
+
+    /// The `startTs` of every block in the day's bridged MAIN-night GROUP (the winning block plus the
+    /// fragments bridged into it, #561), so the naps card excludes ALL of them — only blocks OUTSIDE the
+    /// group are naps. Without this the tab treated every block except the single winner as a nap and a
+    /// biphasic night rendered as phantom naps. (#555)
+    var mainGroupStarts: Set<Int> {
+        Set(SleepView.mainNightGroup(sourceBlocks, habitualMidsleepSec: habitualMidsleepSec).map { $0.startTs })
     }
 
     /// Total time in bed in minutes (from reconstructed stages).

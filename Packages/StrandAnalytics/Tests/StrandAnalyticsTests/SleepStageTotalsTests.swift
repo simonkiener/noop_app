@@ -162,6 +162,36 @@ final class SleepStageTotalsTests: XCTestCase {
                        "score tie (equal duration + equal anchor distance) → earlier onset breaks it")
     }
 
+    /// #555 regression: a biphasic / briefly-interrupted main night (fragments split by short wakes) must
+    /// resolve to ONE bridged GROUP containing ALL its fragments, while a distant afternoon nap stays
+    /// OUTSIDE the group. The Sleep tab classifies naps as "not in this group" and aggregates the group for
+    /// the hero, so the bridged siblings are no longer rendered as phantom naps the way the bare
+    /// single-block selector left them (the #555 report: "three naps instead of a continuous sleep").
+    func testBiphasicNightGroupsAllFragmentsAndExcludesNap() {
+        // Three fragments of ONE night, each separated by a < 60 min wake gap (so they bridge), plus an
+        // afternoon nap > 60 min away (so it does NOT bridge).
+        let f1  = ts525("2026-06-14T23:00")          // 23:00–01:00
+        let f2  = ts525("2026-06-15T01:40")          // 01:40–04:00  (40 min gap → bridges)
+        let f3  = ts525("2026-06-15T04:30")          // 04:30–07:00  (30 min gap → bridges)
+        let nap = ts525("2026-06-15T14:00")          // 14:00–15:00  (7 h gap → does NOT bridge)
+        let blocks = [
+            SleepStageTotals.NightBlock(start: f1,  end: f1  + 2 * 3600),
+            SleepStageTotals.NightBlock(start: f2,  end: f2  + 140 * 60),
+            SleepStageTotals.NightBlock(start: f3,  end: f3  + 150 * 60),
+            SleepStageTotals.NightBlock(start: nap, end: nap + 3600),
+        ]
+        let group = SleepStageTotals.mainNightGroupIndices(blocks, offsetSec: 0)
+        XCTAssertEqual(group, [0, 1, 2],
+                       "all three bridged night fragments are the main group; the afternoon nap is excluded")
+        // The BARE single-block selector picks only ONE fragment — exactly why the un-bridged tab labelled
+        // the other two as naps. The GROUP is what the tab and engine must share. (#555)
+        let single = SleepStageTotals.mainNightIndex(blocks, offsetSec: 0)
+        XCTAssertNotNil(single)
+        XCTAssertTrue([0, 1, 2].contains(single ?? -1),
+                      "the bare winner is one of the night fragments, never the afternoon nap")
+        XCTAssertFalse(group?.contains(3) ?? true, "the afternoon nap is never in the main-night group")
+    }
+
     /// THE #525 invariant: a day with an overnight + a nap reports CONSISTENT totals — the day's
     /// canonical figure equals the MAIN NIGHT's sleep, NOT the night+nap sum. The honoring-edits seam
     /// (with onsets supplied) and the standalone main-night aggregate agree to the minute.

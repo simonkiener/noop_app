@@ -25,7 +25,7 @@ object AppChangelog {
      * Bump this when you add a release below. The "What's New" sheet shows automatically when the
      * stored last-seen version is behind this. (Decoupled from the bundle version on purpose.)
      */
-    const val CURRENT_VERSION = "6.1.0"
+    const val CURRENT_VERSION = "6.1.1"
 
     data class Release(
         val version: String,
@@ -36,6 +36,13 @@ object AppChangelog {
 
     /** Newest first. */
     val releases: List<Release> = listOf(
+        Release(
+            version = "6.1.1",
+            title = "Fix: a night with a brief wake-up showed as separate naps",
+            date = "June 2026",
+            items = listOf(
+                "**Fixed: one continuous night could show as a main sleep plus phantom naps.** After the 6.1.0 sleep rebuild, if you stirred briefly overnight the Sleep tab could split that single night into a \"main\" block plus one or two naps, even though your recovery and your Today total were already correct. The Sleep tab now stitches those fragments back into one night, exactly the way the rest of the app already counted them, so a biphasic or briefly-interrupted night reads as the continuous sleep it was. Thanks pilleuspulcher for the strap log that pinned it down.",
+            )),
         Release(
             version = "6.1.0",
             title = "A big one: smarter sleep, naps, more devices, and a load of fixes",
