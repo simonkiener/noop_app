@@ -182,7 +182,7 @@ jobs:
           notes="Recovered NOOP ${TAG} artifacts from this continuity mirror."
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
-              --title "NOOP ${TAG}" --notes "$notes" --latest
+              --target "$GITHUB_SHA" --title "NOOP ${TAG}" --notes "$notes" --latest
             gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
           else
             gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" \
