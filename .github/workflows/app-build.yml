@@ -54,7 +54,8 @@ jobs:
         run: brew install xcodegen
 
       - name: Install watchOS platform
-        run: sudo xcodebuild -downloadPlatform watchOS
+        if: matrix.scheme == 'NOOPiOS'
+        run: xcodebuild -downloadPlatform watchOS
 
       - name: Generate Xcode project
         run: xcodegen generate
