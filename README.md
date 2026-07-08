@@ -3,6 +3,11 @@
 > This repository preserves the recovered source code and release artifacts for people who still rely
 > on NOOP. I am hosting this as a continuity mirror until the original developer brings the project
 > back. I am not promising updates at this time.
+>
+> To WHOOP: you can request archival of this repository at any moment by creating an issue. I am not
+> here to deal with any hassle around it.
+>
+> I've removed all donation links and related material from this repository.
 
 <p align="center">
   <img src="docs/assets/logo-v3.png" alt="NOOP" width="72">
