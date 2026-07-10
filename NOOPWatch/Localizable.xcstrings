@@ -466,13 +466,13 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ladung"
+            "value": "Erholung"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Charge"
+            "value": "Recovery"
           }
         },
         "es": {
@@ -484,7 +484,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Charge"
+            "value": "Recovery"
           }
         },
         "it": {
@@ -620,13 +620,13 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Anstrengung"
+            "value": "Belastung"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Effort"
+            "value": "Strain"
           }
         },
         "es": {
@@ -638,7 +638,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Effort"
+            "value": "Strain"
           }
         },
         "it": {
@@ -1082,7 +1082,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "REST"
+            "value": "SLEEP"
           }
         },
         "es": {
@@ -1236,13 +1236,13 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ruhe"
+            "value": "Schlaf"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rest"
+            "value": "Sleep"
           }
         },
         "es": {
