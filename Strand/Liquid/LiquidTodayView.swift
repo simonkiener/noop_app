@@ -1058,9 +1058,26 @@ private struct HeroScoreCell: View {
     let animated: Bool
     let onGuide: () -> Void
 
+    @AppStorage(UnitPrefs.effortScaleKey) private var effortScaleRaw = EffortScale.hundred.rawValue
+    private var effortScale: EffortScale { UnitPrefs.resolveEffortScale(effortScaleRaw) }
+
     @State private var shown: Double = 0
 
-    private var frac: Double? { score.map { max(0, min(1, $0 / 100)) } }
+    private var isEffort: Bool { label.caseInsensitiveCompare("Effort") == .orderedSame }
+
+    private var displayValue: Double? {
+        guard let score else { return nil }
+        return isEffort ? UnitFormatter.effortValue(score, scale: effortScale) : score
+    }
+
+    private var scaleMax: Double {
+        return isEffort && effortScale == .whoop ? 21.0 : 100.0
+    }
+
+    private var frac: Double? {
+        guard let displayValue else { return nil }
+        return max(0, min(1, displayValue / scaleMax))
+    }
 
     var body: some View {
         VStack(spacing: 7) {
@@ -1068,8 +1085,12 @@ private struct HeroScoreCell: View {
                 LiquidVessel(value: frac, tint: tint, animated: animated)
                     .frame(width: 96, height: 96)
                 Group {
-                    if score != nil {
-                        CountUpNumber(value: shown, font: StrandFont.rounded(26))
+                    if let displayValue {
+                        CountUpNumber(
+                            value: shown,
+                            font: StrandFont.rounded(26),
+                            format: { isEffort && effortScale == .whoop ? String(format: "%.1f", $0) : "\(Int($0.rounded()))" }
+                        )
                     } else {
                         Text("–").font(StrandFont.rounded(26))
                     }
@@ -1088,7 +1109,7 @@ private struct HeroScoreCell: View {
                 .foregroundStyle(StrandPalette.textSecondary)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text("\(label), \(score.map { String(Int($0.rounded())) } ?? "no data yet"). See how it is scored."))
+            .accessibilityLabel(Text("\(label), \(displayValue.map { isEffort && effortScale == .whoop ? String(format: "%.1f", $0) : String(Int($0.rounded())) } ?? "no data yet"). See how it is scored."))
             if let pill {
                 Text(pill)
                     .font(StrandFont.overlineScaled(8.5)).tracking(1.2)
@@ -1103,11 +1124,13 @@ private struct HeroScoreCell: View {
         .frame(maxWidth: .infinity)
         .onAppear { rollTo(score) }
         .onChangeCompat(of: score) { v in rollTo(v) }
+        .onChangeCompat(of: effortScaleRaw) { _ in rollTo(score) }
     }
 
     private func rollTo(_ v: Double?) {
         guard let v else { shown = 0; return }
-        withAnimation(.easeOut(duration: 0.9)) { shown = v }   // counts up in step with the vessel filling
+        let target = isEffort ? UnitFormatter.effortValue(v, scale: effortScale) : v
+        withAnimation(.easeOut(duration: 0.9)) { shown = target }   // counts up in step with the vessel filling
     }
 }
 

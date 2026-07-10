@@ -221,46 +221,37 @@ struct LiquidVessel: View {
     var animated: Bool = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var sim: LiquidSim
-    @State private var splashes = 0
+    @State private var appeared = false
 
     init(value: Double?, tint: Color, animated: Bool = true) {
         self.value = value
         self.tint = tint
         self.animated = animated
-        _sim = State(initialValue: LiquidSim(target: value ?? 0))
     }
+
+    private var clamped: CGFloat { CGFloat(min(max(value ?? 0.0, 0.0), 1.0)) }
+    private var filled: CGFloat { appeared ? clamped : 0 }
 
     var body: some View {
-        if animated && !reduceMotion { gauge } else { staticGauge }
-    }
-
-    private var gauge: some View {
-        // 60fps: on the 120Hz ProMotion panel a 30fps cap updated the fluid only every 4th refresh,
-        // which read as juddery slosh. Only the 3 hero gauges + HR thread run live now (the small ones
-        // are static), so the higher rate is affordable and the liquid actually flows.
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { tl in
-            let now = liquidSeconds(tl.date)
-            Canvas { context, size in
-                sim.step(now: now, tilt: LiquidMotion.shared.tilt, target: value ?? 0)
-                LiquidRender.vessel(context, size, sim, now: now, tint: tint)
+        GeometryReader { geo in
+            let w = min(geo.size.width, geo.size.height)
+            let strokeWidth = max(2.5, w * 0.082)
+            ZStack {
+                Circle()
+                    .stroke(Color.primary.opacity(0.10),
+                            style: StrokeStyle(lineWidth: strokeWidth, lineCap: .round))
+                Circle()
+                    .trim(from: 0.0, to: max(0.0001, filled))
+                    .stroke(tint, style: StrokeStyle(lineWidth: strokeWidth, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
             }
+            .frame(width: w, height: w)
+            .position(x: geo.size.width / 2, y: geo.size.height / 2)
         }
         .aspectRatio(1, contentMode: .fit)
         .contentShape(Circle())
-        .onTapGesture { sim.splash(12); splashes &+= 1 }
-        .liquidTapHaptic(trigger: splashes)   // light tap feedback (guarded so the primitives compile on macOS 13)
-        .onAppear { LiquidMotion.shared.acquire() }
-        .onDisappear { LiquidMotion.shared.release() }
-    }
-
-    /// One-shot, cached render — posed at the fill line, no clock, no motion acquire.
-    private var staticGauge: some View {
-        Canvas { context, size in
-            LiquidRender.vessel(context, size, LiquidSim.posed(value ?? 0), now: 0, tint: tint)
-        }
-        .aspectRatio(1, contentMode: .fit)
-        .contentShape(Circle())
+        .animation(animated && !reduceMotion ? .spring(response: 0.9, dampingFraction: 0.86) : nil, value: filled)
+        .onAppear { appeared = true }
     }
 }
 
@@ -383,11 +374,12 @@ struct LiquidPressStyle: ButtonStyle {
 struct CountUpNumber: View, Animatable {
     var value: Double
     var font: Font
+    var format: (Double) -> String = { "\(Int($0.rounded()))" }
     var animatableData: Double {
         get { value }
         set { value = newValue }
     }
     var body: some View {
-        Text("\(Int(value.rounded()))").font(font).monospacedDigit()
+        Text(format(value)).font(font).monospacedDigit()
     }
 }

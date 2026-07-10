@@ -77,57 +77,54 @@ fun LiquidVessel(
     modifier: Modifier = Modifier,
 ) {
     val reduced = rememberReduceMotion()
+    val targetVal = (value ?: 0.0).coerceIn(0.0, 1.0).toFloat()
+    
+    val animatedValue by animateFloatAsState(
+        targetValue = targetVal,
+        animationSpec = if (animated && !reduced) {
+            androidx.compose.animation.core.spring(
+                dampingRatio = 0.86f,
+                stiffness = 48f
+            )
+        } else {
+            androidx.compose.animation.core.snap()
+        },
+        label = "LiquidVesselProgress"
+    )
 
-    if (animated && !reduced) {
-        val view = LocalView.current
-        // The mutable physics, remembered across recompositions so the slosh is continuous. Seeded at the
-        // fill line (iOS `LiquidSim(target: value ?? 0)`); the target is re-supplied every frame in step().
-        val sim = remember { LiquidSim(target = value ?: 0.0) }
-
-        // One shared tilt source per visible liquid screen — acquire on enter, release on leave (iOS
-        // .onAppear/.onDisappear). Keyed on the context so it re-runs if the composition's context changes.
-        val context = LocalContext.current
-        DisposableEffect(context) {
-            LiquidMotion.shared.acquire(context)
-            onDispose { LiquidMotion.shared.release() }
-        }
-
-        // Monotonic seconds clock (from-zero accumulator; only the sinusoid phase matters — same as
-        // LiquidSky.kt). Drives sim.step + render.
-        var seconds by remember { mutableDoubleStateOf(0.0) }
-        LaunchedEffect(Unit) {
-            var last = 0L
-            while (true) {
-                withFrameNanos { frame ->
-                    if (last != 0L) seconds += (frame - last) / 1_000_000_000.0
-                    last = frame
-                }
-            }
-        }
-
-        Canvas(
-            modifier = modifier
-                .aspectRatio(1f)
-                .clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() },
-                ) {
-                    sim.splash(12)
-                    // A LIGHT tap impact, matching iOS `.sensoryFeedback(.impact(weight: .light))`. Compose's
-                    // HapticFeedbackType on this BOM only offers LongPress (heavy) / TextHandleMove, so route a
-                    // light KEYBOARD_TAP through the platform view — the closest available light-impact tick.
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                },
-        ) {
-            sim.step(now = seconds, tilt = LiquidMotion.shared.tilt, target = value ?: 0.0)
-            with(LiquidRender) { vessel(size = size, sim = sim, now = seconds, tint = tint) }
-        }
-    } else {
-        // One-shot, cached render — posed at the fill line, no clock, no motion acquire.
-        val posed = remember(value) { LiquidSim.posed(value ?: 0.0) }
-        Canvas(modifier = modifier.aspectRatio(1f)) {
-            with(LiquidRender) { vessel(size = size, sim = posed, now = 0.0, tint = tint) }
-        }
+    Canvas(
+        modifier = modifier.aspectRatio(1f)
+    ) {
+        val w = size.minDimension
+        val strokeWidth = maxOf(2.5f, w * 0.082f)
+        
+        drawCircle(
+            color = Palette.textPrimary.copy(alpha = 0.10f),
+            radius = (w - strokeWidth) / 2f,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = strokeWidth,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round
+            )
+        )
+        
+        drawArc(
+            color = tint,
+            startAngle = -90f,
+            sweepAngle = maxOf(0.0001f, animatedValue) * 360f,
+            useCenter = false,
+            topLeft = androidx.compose.ui.geometry.Offset(
+                x = (size.width - w + strokeWidth) / 2f,
+                y = (size.height - w + strokeWidth) / 2f
+            ),
+            size = androidx.compose.ui.geometry.Size(
+                width = w - strokeWidth,
+                height = w - strokeWidth
+            ),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = strokeWidth,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round
+            )
+        )
     }
 }
 
