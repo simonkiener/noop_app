@@ -412,12 +412,12 @@ struct LiquidTodayView: View {
 
     private var heroCard: some View {
         HStack(alignment: .top, spacing: 4) {
-            HeroScoreCell(label: "Charge", score: displayDay?.recovery, tint: StrandPalette.chargeColor,
-                          pill: "WHOOP", animated: dataLoaded, onGuide: { guideSection = .charge })
-            HeroScoreCell(label: "Effort", score: displayDay?.strain, tint: StrandPalette.effortColor,
-                          pill: nil, animated: dataLoaded, onGuide: { guideSection = .effort })
-            HeroScoreCell(label: "Rest", score: restScore, tint: StrandPalette.restColor,
+            HeroScoreCell(label: "Sleep", score: restScore, tint: StrandPalette.restColor,
                           pill: "WHOOP", animated: dataLoaded, onGuide: { guideSection = .rest })
+            HeroScoreCell(label: "Recovery", score: displayDay?.recovery, tint: StrandPalette.chargeColor,
+                          pill: "WHOOP", animated: dataLoaded, onGuide: { guideSection = .charge })
+            HeroScoreCell(label: "Strain", score: displayDay?.strain, tint: StrandPalette.effortColor,
+                          pill: nil, animated: dataLoaded, onGuide: { guideSection = .effort })
         }
         .padding(.vertical, 16)
         .padding(.horizontal, 12)
@@ -1063,7 +1063,7 @@ private struct HeroScoreCell: View {
 
     @State private var shown: Double = 0
 
-    private var isEffort: Bool { label.caseInsensitiveCompare("Effort") == .orderedSame }
+    private var isEffort: Bool { label.caseInsensitiveCompare("Strain") == .orderedSame }
 
     private var displayValue: Double? {
         guard let score else { return nil }

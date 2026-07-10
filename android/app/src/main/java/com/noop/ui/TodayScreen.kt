@@ -2250,6 +2250,36 @@ private fun ScoreHeroRow(
                 horizontalArrangement = Arrangement.spacedBy(ringGap, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.Top,
             ) {
+                // REST, sleep composite 0–100, reusing the recovery colour scale, as a liquid vessel. Badges
+                // its real sleep_performance merge winner under the vessel (gated upstream on restScore != null).
+                HeroRingColumn(
+                    domain = DomainTheme.Rest,
+                    onInfo = { onScoreInfo(ScoreSection.REST) },
+                    provenance = restProvenance,
+                    // iOS shows a static "WHOOP" pill under Rest too; fallback when no dynamic provenance
+                    // resolved and the ring shows a real Rest score.
+                    sourcePill = if (restScore != null) "WHOOP" else null,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        HeroScoreVessel(
+                            fraction = (restScore ?: 0.0) / 100.0,
+                            value = restScore ?: 0.0,
+                            tint = Palette.recoveryColor(restScore ?: 0.0),
+                            diameter = ring,
+                            animated = animated,
+                            showsValue = restScore != null,
+                        )
+                        // #898: an aggregate-import user (a daily HRV/RHR import, no in-bed session) gets a
+                        // Charge from WatchRecovery but NO sleep_performance, so Rest used to read a bare
+                        // "No Data" next to a lit Charge , reading as broken. When a Charge IS present for the
+                        // day but Rest is absent, say WHY honestly ("Needs a tracked night") instead. We do
+                        // NOT fabricate a Rest number , an aggregate genuinely has no scored night. A day with
+                        // no Charge either (truly empty) keeps the plain "No Data". Mirrors iOS restRing.
+                        if (restScore == null) {
+                            if (recovery != null) RingNeedsTrackedNight() else RingNoData()
+                        }
+                    }
+                }
                 // CHARGE, recovery 0–100, as a liquid VESSEL with the value counting up over it. Honest
                 // empty / calibrating overlay; badges its recovery winner.
                 HeroRingColumn(
@@ -2308,36 +2338,6 @@ private fun ScoreHeroRow(
                             format = { if (effortScale == EffortScale.WHOOP) String.format(Locale.US, "%.1f", it) else it.toInt().toString() },
                         )
                         if (strain == null) RingNoData()
-                    }
-                }
-                // REST, sleep composite 0–100, reusing the recovery colour scale, as a liquid vessel. Badges
-                // its real sleep_performance merge winner under the vessel (gated upstream on restScore != null).
-                HeroRingColumn(
-                    domain = DomainTheme.Rest,
-                    onInfo = { onScoreInfo(ScoreSection.REST) },
-                    provenance = restProvenance,
-                    // iOS shows a static "WHOOP" pill under Rest too; fallback when no dynamic provenance
-                    // resolved and the ring shows a real Rest score.
-                    sourcePill = if (restScore != null) "WHOOP" else null,
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        HeroScoreVessel(
-                            fraction = (restScore ?: 0.0) / 100.0,
-                            value = restScore ?: 0.0,
-                            tint = Palette.recoveryColor(restScore ?: 0.0),
-                            diameter = ring,
-                            animated = animated,
-                            showsValue = restScore != null,
-                        )
-                        // #898: an aggregate-import user (a daily HRV/RHR import, no in-bed session) gets a
-                        // Charge from WatchRecovery but NO sleep_performance, so Rest used to read a bare
-                        // "No Data" next to a lit Charge , reading as broken. When a Charge IS present for the
-                        // day but Rest is absent, say WHY honestly ("Needs a tracked night") instead. We do
-                        // NOT fabricate a Rest number , an aggregate genuinely has no scored night. A day with
-                        // no Charge either (truly empty) keeps the plain "No Data". Mirrors iOS restRing.
-                        if (restScore == null) {
-                            if (recovery != null) RingNeedsTrackedNight() else RingNoData()
-                        }
                     }
                 }
             }

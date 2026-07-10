@@ -2543,6 +2543,7 @@ struct TodayView: View {
         // generous spacing, mirroring the flat mockup. Sized off width so they stay equal on any phone.
         let ring = Self.heroRingDiameter(rowWidth: measured)
         HStack(alignment: .top, spacing: 22) {
+            heroRingColumn(section: .rest, domain: .rest, provenanceKey: "sleep_performance") { restRing(diameter: ring) }
             // Component 4: Charge/Rest badge their real per-day merge winner; Effort has no badge.
             // A1 (#514/#706): the Charge ring is TAPPABLE (a small chevron cue overlays the ring's bottom
             // edge, INSIDE the ring frame so it adds no stacked height, keeping the #762 self-sizing row
@@ -2553,7 +2554,6 @@ struct TodayView: View {
                 chargeRing(score: score, d: d, diameter: ring)
             }
             heroRingColumn(section: .effort, domain: .effort) { effortRing(d: d, diameter: ring) }
-            heroRingColumn(section: .rest, domain: .rest, provenanceKey: "sleep_performance") { restRing(diameter: ring) }
         }
         .frame(maxWidth: .infinity, alignment: .center)
         // Zero-impact width reader: a clear background that publishes the row's width up via preference. It
@@ -2574,9 +2574,9 @@ struct TodayView: View {
     /// Kotlin (the Android hero already reads its label from a localized resource, not the enum name).
     private static func domainLabel(_ domain: DomainTheme) -> LocalizedStringKey {
         switch domain {
-        case .charge: return "Charge"
-        case .effort: return "Effort"
-        case .rest:   return "Rest"
+        case .charge: return "Recovery"
+        case .effort: return "Strain"
+        case .rest:   return "Sleep"
         case .stress: return "Stress"
         }
     }
@@ -2585,9 +2585,9 @@ struct TodayView: View {
     /// interpolated from a localized literal (so the spoken sentence is translated, not half-English).
     private static func domainGuideAccessibilityLabel(_ domain: DomainTheme) -> LocalizedStringKey {
         switch domain {
-        case .charge: return "How Charge is calculated"
-        case .effort: return "How Effort is calculated"
-        case .rest:   return "How Rest is calculated"
+        case .charge: return "How Recovery is calculated"
+        case .effort: return "How Strain is calculated"
+        case .rest:   return "How Sleep is calculated"
         case .stress: return "How Stress is calculated"
         }
     }

@@ -320,7 +320,13 @@ enum class DomainTheme {
         }
 
     /** A short upper-case label for the world (CHARGE / EFFORT / REST / STRESS). */
-    val label: String get() = name
+    val label: String
+        get() = when (this) {
+            Charge -> "Recovery"
+            Effort -> "Strain"
+            Rest -> "Sleep"
+            Stress -> "Stress"
+        }
 }
 
 // MARK: - Motion (ported from StrandDesign/Motion.swift §9.6)
