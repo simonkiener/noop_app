@@ -47,7 +47,7 @@ struct WatchGlanceView: View {
                 // a bare literal would bypass the string catalog entirely.
                 ScoreRing(label: String(localized: "Charge"), value: snap.charge,
                           calibrating: snap.chargeCalibrating || stale,
-                          color: StrandPalette.chargeColor)
+                          color: snap.charge.map { StrandPalette.recoveryColor(Double($0)) } ?? StrandPalette.chargeColor)
                 ScoreRing(label: String(localized: "Effort"), value: snap.effort,
                           calibrating: snap.effortCalibrating || stale,
                           color: StrandPalette.effortColor)

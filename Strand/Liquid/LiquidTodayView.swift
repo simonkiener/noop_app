@@ -414,7 +414,8 @@ struct LiquidTodayView: View {
         HStack(alignment: .top, spacing: 4) {
             HeroScoreCell(label: "Sleep", score: restScore, tint: StrandPalette.restColor,
                           pill: "WHOOP", animated: dataLoaded, onGuide: { guideSection = .rest })
-            HeroScoreCell(label: "Recovery", score: displayDay?.recovery, tint: StrandPalette.chargeColor,
+            HeroScoreCell(label: "Recovery", score: displayDay?.recovery,
+                          tint: displayDay?.recovery.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.chargeColor,
                           pill: "WHOOP", animated: dataLoaded, onGuide: { guideSection = .charge })
             HeroScoreCell(label: "Strain", score: displayDay?.strain, tint: StrandPalette.effortColor,
                           pill: nil, animated: dataLoaded, onGuide: { guideSection = .effort })
@@ -682,7 +683,9 @@ struct LiquidTodayView: View {
         return VStack(spacing: 8) {
             sectionHead("KEY METRICS", trailing: "14-day trend")
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                ktile("Recovery", intText(displayDay?.recovery), "%", StrandPalette.chargeColor, frac(displayDay?.recovery))
+                ktile("Recovery", intText(displayDay?.recovery), "%",
+                      displayDay?.recovery.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.chargeColor,
+                      frac(displayDay?.recovery))
                 ktile("Strain", intText(displayDay?.strain), "%", StrandPalette.effortColor, frac(displayDay?.strain))
                 ktile("Sleep", sleepText, "", StrandPalette.restColor, fracOver(displayDay?.totalSleepMin, 480))
                 ktile("HRV", intText(hrv), "ms", StrandPalette.metricCyan, fracOver(hrv, 120))

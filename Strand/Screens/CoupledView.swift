@@ -155,7 +155,8 @@ struct CoupledView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     ZStack {
                         LiquidVessel(value: recovery.map { max(0, min(1, $0 / 100)) },
-                                     tint: StrandPalette.chargeColor, animated: recovery != nil)
+                                     tint: recovery.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.chargeColor,
+                                     animated: recovery != nil)
                             // A carried (not-yet-rescored) morning reads dimmed, the Today #802 idiom.
                             .opacity(isCarryingRecovery ? 0.85 : 1)
                             .frame(width: 200, height: 200)

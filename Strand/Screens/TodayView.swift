@@ -2691,14 +2691,14 @@ struct TodayView: View {
     private func chargeRing(score: Double?, d: DailyMetric?, diameter: CGFloat) -> some View {
         if let s = score {
             GlowRing(fraction: s / 100, value: s, format: { "\(Int($0.rounded()))" },
-                     color: StrandPalette.chargeColor, diameter: diameter, lineWidth: diameter * 0.10)
+                     color: StrandPalette.recoveryColor(s), diameter: diameter, lineWidth: diameter * 0.10)
         } else if recoveryCalibration == nil, let carried = lastScoredCharge {
             // #802: a CARRIED last-night Charge draws as a real (dimmed) ring, matching the Rest ring, rather
             // than a bare number on a faint track, which read as broken next to Rest's filled ring. Same
             // diameter, so the #762 self-sizing hero row is untouched; the dim + the row-level "Last night"
             // caption already beneath the rings mark it as carried, not today's fresh score.
             GlowRing(fraction: carried.value / 100, value: carried.value, format: { "\(Int($0.rounded()))" },
-                     color: StrandPalette.chargeColor, diameter: diameter, lineWidth: diameter * 0.10)
+                     color: StrandPalette.recoveryColor(carried.value), diameter: diameter, lineWidth: diameter * 0.10)
                 .opacity(0.8)
         } else {
             emptyHeroRing(diameter: diameter) { ringEmptyOverlay(d: d, diameter: diameter) }
