@@ -252,9 +252,7 @@ struct TodayView: View {
     @State private var stressToday: Double?
     @State private var fitnessAgeToday: Double?
     @State private var vitalityToday: Double?
-    /// Distinct days + sleep sessions imported from a Mi Band (Mi Fitness), for the Data Sources row.
-    @State private var xiaomiDays = 0
-    @State private var xiaomiSleeps = 0
+
 
     // The Rest SCORE (0–100) for the logical day, IntelligenceEngine's Rest composite, written to the
     // `sleep_performance` metric series (imported export wins, computed strap fills). The Key-Metrics
@@ -3404,15 +3402,7 @@ struct TodayView: View {
                             present: !appleDays.isEmpty,
                             detail: String(localized: "\(appleDays.count) days · \(workouts.filter { WorkoutSource.isAppleHealth($0.source) }.count) workouts")
                         )
-                        if xiaomiDays > 0 {
-                            Divider().overlay(StrandPalette.hairline)
-                            sourceRow(
-                                badge: "Mi Band",
-                                tint: StrandPalette.metricAmber,
-                                present: true,
-                                detail: String(localized: "\(xiaomiDays) days · \(xiaomiSleeps) sleeps")
-                            )
-                        }
+
                         strapBatteryRow
                         Divider().overlay(StrandPalette.hairline)
                         strapSyncRow
@@ -3435,8 +3425,7 @@ struct TodayView: View {
                 HStack(spacing: 8) {
                     Text(Self.syncedFromSummary(
                         hasWhoop: !repo.days.isEmpty,
-                        hasApple: !appleDays.isEmpty,
-                        hasXiaomi: xiaomiDays > 0))
+                        hasApple: !appleDays.isEmpty))
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textSecondary)
                         .lineLimit(1)
@@ -3459,11 +3448,10 @@ struct TodayView: View {
     /// data using the audience-facing words ("WHOOP", "Apple Watch" for Apple Health, "Mi Band"); "No
     /// sources yet" when nothing is banked. Unit-testable so the collapsed copy can't drift. The expanded
     /// card still uses the existing per-source rows, so the Apple-Health provenance footer is unchanged.
-    static func syncedFromSummary(hasWhoop: Bool, hasApple: Bool, hasXiaomi: Bool) -> String {
+    static func syncedFromSummary(hasWhoop: Bool, hasApple: Bool) -> String {
         var names: [String] = []
         if hasWhoop { names.append("WHOOP") }
         if hasApple { names.append("Apple Watch") }
-        if hasXiaomi { names.append("Mi Band") }
         guard !names.isEmpty else { return String(localized: "No sources yet") }
         return String(localized: "Synced from: \(names.joined(separator: ", "))")
     }
@@ -3690,8 +3678,6 @@ struct TodayView: View {
         async let stepsEstSeriesA    = repo.exploreSeries(key: "steps_est", source: "my-whoop")
         async let workoutsA          = repo.workoutRows()
         async let appleDaysA         = repo.appleDailyRows()
-        async let xStepsA            = repo.series(key: "steps", source: "xiaomi-band")
-        async let xSleepA            = repo.series(key: "sleep_total_min", source: "xiaomi-band")
         // #753: the pinned Stress card must read its number the SAME way StressView (the detail page) does,
         // not off the merged stress series' last row. StressView builds `StressModel(days: repo.days,
         // stored:)` and shows `model.score`, which PREFERS today's stored stress row but otherwise DERIVES
@@ -3716,10 +3702,6 @@ struct TodayView: View {
 
         workouts = await workoutsA
         appleDays = await appleDaysA
-        // Mi Band (Mi Fitness import), distinct days across its representative metric keys.
-        let xSteps = await xStepsA
-        let xSleep = await xSleepA
-        xiaomiDays = Set(xSteps.map(\.day) + xSleep.map(\.day)).count
         // Your cards (#582 / Design Reset): Stress / Fitness age / Vitality for the pinned home cards.
         // #753: Stress mirrors StressView. `StressModel(days:stored:).score` is TODAY's score (stored row
         // preferred, else derived off the live RHR/HRV baseline), so the pinned card never lags the detail
@@ -3731,10 +3713,7 @@ struct TodayView: View {
         // Hydration card (opt-in): today's stored total + the sex/Effort goal. Only loaded when the
         // feature is on, so a disabled feature does zero work and the card stays hidden.
         await reloadHydration()
-        if let store = await repo.storeHandle() {
-            let farFuture = Int(Date.distantFuture.timeIntervalSince1970)
-            xiaomiSleeps = ((try? await store.sleepSessions(deviceId: "xiaomi-band", from: 0, to: farFuture, limit: 4000))?.count) ?? 0
-        }
+
         // #849: snapshot everything just computed onto the long-lived `repo`, keyed by the seq we loaded for,
         // so a later re-mount with unchanged data restores it in-memory instead of re-running this pass.
         // Note the Rest-tile spark (`sparks["sleep_performance"]`) is written by loadDayScoped, which always
@@ -3749,8 +3728,6 @@ struct TodayView: View {
             stepsEstByDay: stepsEstByDay,
             workouts: workouts,
             appleDays: appleDays,
-            xiaomiDays: xiaomiDays,
-            xiaomiSleeps: xiaomiSleeps,
             stressToday: stressToday,
             fitnessAgeToday: fitnessAgeToday,
             vitalityToday: vitalityToday
@@ -3767,8 +3744,6 @@ struct TodayView: View {
         stepsEstByDay = c.stepsEstByDay
         workouts = c.workouts
         appleDays = c.appleDays
-        xiaomiDays = c.xiaomiDays
-        xiaomiSleeps = c.xiaomiSleeps
         stressToday = c.stressToday
         fitnessAgeToday = c.fitnessAgeToday
         vitalityToday = c.vitalityToday
@@ -4302,8 +4277,6 @@ struct TodayHistoryWideCache {
     let stepsEstByDay: [String: Int]
     let workouts: [WorkoutRow]
     let appleDays: [AppleDaily]
-    let xiaomiDays: Int
-    let xiaomiSleeps: Int
     let stressToday: Double?
     let fitnessAgeToday: Double?
     let vitalityToday: Double?

@@ -303,7 +303,6 @@ struct RootTabView: View {
                 moreSection("Data") {
                     MoreRow("Your Data, Fused", "square.stack.3d.up.fill") { FusedRecordHost() }
                     MoreRow("Apple Health", "heart.fill") { AppleHealthView() }
-                    MoreRow("Mi Band", "figure.walk.motion") { XiaomiBandView() }
                     MoreRow("Data Sources", "externaldrive.fill") { DataSourcesView() }
                     MoreRow("Backup & Sync", "externaldrive.fill.badge.icloud") { BackupSyncView() }
                     // #155: HealthKit-free Apple Health path for sideloaded installs (Siri Shortcut

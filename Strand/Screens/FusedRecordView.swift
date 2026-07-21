@@ -461,7 +461,7 @@ private extension FusedMetricPoint {
         rows: [
             FusedRow(point: .fixture("rhr", [(.whoopImport, 52), (.appleHealth, 53)]),
                      label: "Resting HR", accentHex: nil),
-            FusedRow(point: .fixture("steps", [(.xiaomiBand, 8420), (.whoopImport, 6100)]),
+            FusedRow(point: .fixture("steps", [(.appleHealth, 8420), (.whoopImport, 6100)]),
                      label: "Steps"),
             FusedRow(point: .fixture("sleep_total_min", [(.whoopImport, 432), (.appleHealth, 400)]),
                      label: "Sleep"),
@@ -471,9 +471,9 @@ private extension FusedMetricPoint {
                      label: "HRV"),
         ],
         dayOwner: .whoopImport,
-        contributingSourceCount: 3
+        contributingSourceCount: 2
     )
-    return FusedRecordView(record: record)
+    FusedRecordView(record: record)
         .frame(width: 480, height: 820)
         .preferredColorScheme(.dark)
 }

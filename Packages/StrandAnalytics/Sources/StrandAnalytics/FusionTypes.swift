@@ -23,8 +23,6 @@ public enum FusionSource: String, Equatable, Sendable, CaseIterable, Codable {
     case appleHealth = "apple-health"
     /// Health Connect aggregate (Android's Apple-equivalent body-metric source).
     case healthConnect = "health-connect"
-    /// Mi Band / Xiaomi import — a dedicated wrist band (counts steps directly).
-    case xiaomiBand = "xiaomi-band"
     /// Nutrition CSV import (single-source passthrough — calories/macros).
     case nutritionCsv = "nutrition-csv"
     /// Locally-cached fallback row with no richer provenance.
@@ -37,7 +35,6 @@ public enum FusionSource: String, Equatable, Sendable, CaseIterable, Codable {
         case .noopComputed:  return "NOOP"
         case .appleHealth:   return "Apple Health"
         case .healthConnect: return "Health Connect"
-        case .xiaomiBand:    return "Mi Band"
         case .nutritionCsv:  return "Nutrition"
         case .localCache:    return "Cached"
         }

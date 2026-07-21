@@ -245,12 +245,6 @@ final class TodayExplainabilityTests: XCTestCase {
                        "Whoop")
     }
 
-    func testProvenance_otherKnownSource_keepsItsDisplayName() {
-        // Mi Band is a real merge winner — keep its own name, never a blanket on-device claim.
-        XCTAssertEqual(TodayView.provenanceDisplayLabel(rawSource: "xiaomi-band", deviceId: "my-whoop"),
-                       "Mi Band")
-    }
-
     // MARK: - Apple Watch provenance (M1) — Today-only "Apple Watch" relabel of the apple-health source
 
     func testIsWatchSource_appleHealthSource_isTrue() {
@@ -282,9 +276,5 @@ final class TodayExplainabilityTests: XCTestCase {
             TodayView.todayProvenanceChipLabel(rawSource: "my-whoop-noop", deviceId: "my-whoop",
                                                appleHealthSource: "apple-health"),
             "On-device")
-        XCTAssertEqual(
-            TodayView.todayProvenanceChipLabel(rawSource: "xiaomi-band", deviceId: "my-whoop",
-                                               appleHealthSource: "apple-health"),
-            "Mi Band")
     }
 }

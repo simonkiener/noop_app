@@ -20,7 +20,6 @@ struct MetricDescriptor: Identifiable, Hashable {
     var sourceLabel: String {
         switch source {
         case "apple-health": return "Apple Health"
-        case "xiaomi-band":  return "Mi Band"
         case "nutrition-csv": return String(localized: "Nutrition")
         case "noop-mood":    return String(localized: "Mood")
         default:             return "Whoop"   // "my-whoop" + on-device computed sources
@@ -168,24 +167,6 @@ enum MetricCatalog {
 
         // ── Mind (daily mood check-in, 1–5; non-clinical self-tracking)
         d("mood", String(localized: "Mood"), "Mind", "/5", "noop-mood", "face.smiling", 0, true),
-
-        // ── Mi Band (imported from Mi Fitness). Same metricSeries mechanism as Apple Health /
-        //    Nutrition, so these light up Explore, Compare and the correlation scan. Distinct
-        //    `source` keeps them comparable against the WHOOP/Apple versions rather than colliding.
-        d("avg_hr", String(localized: "Average Heart Rate"), "Heart", "bpm", "xiaomi-band", "heart", 0, nil),
-        d("max_hr", String(localized: "Max Heart Rate"), "Heart", "bpm", "xiaomi-band", "bolt.heart", 0, nil),
-        d("energy_kcal", String(localized: "Calories"), "Heart", "kcal", "xiaomi-band", "flame", 0, nil),
-        d("vitality", String(localized: "Vitality"), "Heart", "", "xiaomi-band", "sparkles", 0, true),
-        d("rhr", String(localized: "Resting Heart Rate"), "Charge", "bpm", "xiaomi-band", "heart", 0, false),
-        d("spo2", String(localized: "Blood Oxygen"), "Charge", "%", "xiaomi-band", "drop", 0, true),
-        d("sleep_total_min", String(localized: "Asleep Time"), "Rest", "min", "xiaomi-band", "moon.zzz", 0, true),
-        d("sleep_deep_min", String(localized: "Deep (SWS) Sleep"), "Rest", "min", "xiaomi-band", "moon.fill", 0, true),
-        d("sleep_rem_min", String(localized: "REM Sleep"), "Rest", "min", "xiaomi-band", "moon.haze", 0, true),
-        d("sleep_light_min", String(localized: "Light Sleep"), "Rest", "min", "xiaomi-band", "moon", 0, nil),
-        d("sleep_score", String(localized: "Sleep Score"), "Rest", "", "xiaomi-band", "moon.stars", 0, true),
-        d("steps", String(localized: "Steps"), "Effort", "", "xiaomi-band", "figure.walk", 0, true),
-        d("intensity_min", String(localized: "Intensity Minutes"), "Effort", "min", "xiaomi-band", "figure.run", 0, true),
-        d("stress", String(localized: "Stress"), "Health", "/100", "xiaomi-band", "gauge.with.dots.needle.50percent", 0, false),
     ]
 
     static func inCategory(_ c: String) -> [MetricDescriptor] { all.filter { $0.category == c } }

@@ -10,13 +10,13 @@ final class FusionResolverTests: XCTestCase {
 
     // MARK: - 1. Trust ordering ("best signal wins")
 
-    func testStepsBandBeatsStrapEstimate() {
-        // A wrist band COUNTS steps (tier 0); the strap only ESTIMATES (tier 3) — the band must win.
+    func testStepsPedometerBeatsStrapEstimate() {
+        // Phone pedometer (tier 0) beats strap motion step estimate (tier 3).
         let point = FusionResolver.resolve(metricKey: "steps", inputs: [
             FusionInput(source: .whoopImport, value: 6000),  // strap estimate
-            FusionInput(source: .xiaomiBand, value: 8420),   // counts directly
+            FusionInput(source: .appleHealth, value: 8420),  // counts directly
         ])
-        XCTAssertEqual(point?.winningSource, .xiaomiBand)
+        XCTAssertEqual(point?.winningSource, .appleHealth)
         XCTAssertEqual(point?.value, 8420)
         XCTAssertEqual(point?.contributors.first?.reason, "counts directly")
     }
@@ -43,11 +43,9 @@ final class FusionResolverTests: XCTestCase {
     }
 
     func testTieBrokenStablyBySourcePriority() {
-        // Two tier-0 step counters (band + phone). The phone has the lower source-priority for steps?
-        // No — for steps both are tier 0; the stable tiebreak is sourcePriority: appleHealth (2) <
-        // xiaomiBand (4), so Apple wins the tie even though the band is listed first.
+        // Two tier-0 step counters (phone + health connect).
         let point = FusionResolver.resolve(metricKey: "steps", inputs: [
-            FusionInput(source: .xiaomiBand, value: 8000),
+            FusionInput(source: .healthConnect, value: 8000),
             FusionInput(source: .appleHealth, value: 8100),
         ])
         XCTAssertEqual(point?.winningSource, .appleHealth)
@@ -95,17 +93,17 @@ final class FusionResolverTests: XCTestCase {
     func testStepsPercentBandAgree() {
         // Steps tolerance is ±10% agree / ±30% minor. Winner 8000, other 8500 → 6.25% → agree.
         let point = FusionResolver.resolve(metricKey: "steps", inputs: [
-            FusionInput(source: .xiaomiBand, value: 8000),
+            FusionInput(source: .appleHealth, value: 8000),
             FusionInput(source: .whoopImport, value: 8500),
         ])
-        XCTAssertEqual(point?.winningSource, .xiaomiBand)
+        XCTAssertEqual(point?.winningSource, .appleHealth)
         XCTAssertEqual(point?.agreement, .agree)
     }
 
     func testStepsPercentBandConflict() {
         // Winner 8000, other 14000 → 75% over → conflict.
         let point = FusionResolver.resolve(metricKey: "steps", inputs: [
-            FusionInput(source: .xiaomiBand, value: 8000),
+            FusionInput(source: .appleHealth, value: 8000),
             FusionInput(source: .whoopImport, value: 14000),
         ])
         XCTAssertEqual(point?.agreement, .conflict)
@@ -163,7 +161,7 @@ final class FusionResolverTests: XCTestCase {
     // MARK: - Policy table sanity
 
     func testStepsTierTable() {
-        XCTAssertEqual(MetricArbitrationPolicy.tier(metric: .steps, source: .xiaomiBand), 0)
+        XCTAssertEqual(MetricArbitrationPolicy.tier(metric: .steps, source: .appleHealth), 0)
         XCTAssertEqual(MetricArbitrationPolicy.tier(metric: .steps, source: .whoopImport), 3)
     }
 
