@@ -40,7 +40,7 @@ enum DemoDayHarness {
 
     /// The ten frames, one per captured hour, ordered through the day. Hand-tuned so the stat
     /// progression reads believably as the day advances (Effort climbs and settles, HRV/RHR ebb and
-    /// flow, stress peaks midday). The scene each hour resolves to is owned by `DayCycleScene`.
+    /// flow, stress peaks midday).
     static let frames: [DemoDayFrame] = [
         DemoDayFrame(hour: 2,  greeting: "Good night",     readiness: "Solid",    effort: 3,  hrvMs: 84, rhrBpm: 50, stress0to3: 0, synthHeadline: "Resting",      synthBody: "Deep in the night. Your body is recovering."),
         DemoDayFrame(hour: 5,  greeting: "Early start",    readiness: "Solid",    effort: 5,  hrvMs: 81, rhrBpm: 51, stress0to3: 0, synthHeadline: "Waking",       synthBody: "First light. Recovery is looking strong."),

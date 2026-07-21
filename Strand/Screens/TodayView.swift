@@ -197,10 +197,7 @@ struct TodayView: View {
     // Imperial/Metric display preference (D#103). Only the Weight tile carries a convertible unit here.
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     private var unitSystem: UnitSystem { UnitSystem(rawValue: unitSystemRaw) ?? .metric }
-    // Day-cycle scene backdrop (#698). Default ON. When the user turns it off in Settings → Appearance,
-    // Today drops the SceneScreenBackground and falls back to the plain dark surfaceBase canvas. The
-    // cards already sit on an opaque canvas, so readability is unchanged either way.
-    @AppStorage(SceneBackgroundPrefs.enabledKey) private var showDayCycleBackground = true
+
     // Effort display scale (#268), drives the Effort tile's value + caption. Display-only.
     @AppStorage(UnitPrefs.effortScaleKey) private var effortScaleRaw = EffortScale.hundred.rawValue
     private var effortScale: EffortScale { UnitPrefs.resolveEffortScale(effortScaleRaw) }
@@ -1176,31 +1173,8 @@ struct TodayView: View {
                             : "Updates")
     }
 
-    /// The local hour driving the day-cycle scene. DEBUG promo harness: a pinned `--demo-hour` frame
-    /// overrides it; otherwise (and always in Release) the live clock hour. Byte-identical in Release.
-    private var demoSceneHour: Int {
-        #if DEBUG
-        return DemoDayHarness.hour ?? Calendar.current.component(.hour, from: Date())
-        #else
-        return Calendar.current.component(.hour, from: Date())
-        #endif
-    }
-
     var body: some View {
-        ScreenScaffold(title: scaffoldTitle, onRefresh: { await repo.refresh() },
-                       // PERF (scroll): lazy column so the scaffold materialises Today's content on demand.
-                       // Today supplies its own inner eager VStack (below), so the staggered section reveal is
-                       // unchanged, this only defers building the single inner stack until it scrolls in.
-                       // Byte-identical layout (LazyVStack == eager VStack alignment/spacing/header).
-                       lazy: true,
-                       // PERF (scroll stutter): the day-cycle scene is a static masked Image. CoreAnimation
-                       // already caches it as a stable image layer, so it does NOT re-rasterize on body
-                       // re-evals or scroll. NO .drawingGroup(), wrapping this 600pt masked image in a
-                       // second offscreen pass DOUBLED its cost and re-rasterised it on every TodayView
-                       // body re-eval (the masked image is itself one offscreen pass). That was a v7.0.2
-                       // lag regression; removing the flatten restores native layer caching.
-                       topBackground: showDayCycleBackground
-                           ? AnyView(SceneScreenBackground(hour: demoSceneHour)) : nil) {
+        ScreenScaffold(title: scaffoldTitle, onRefresh: { await repo.refresh() }, lazy: true) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 #if os(iOS)
                 // Compact top bar: profile/settings (left) · ‹ Today › day-nav (centre, bold) · strap
