@@ -67,18 +67,18 @@ public extension Color {
 public enum StrandPalette {
 
     // MARK: Surfaces — deep navy canvas, tinted frosted cards
-    // Background is a near-black navy (NOT pure black); cards float just above it.
-    public static let surfaceBase    = Color(light: "#F2F2F7", dark: "#121518") // WHOOP dark blue-grey canvas (sampled)
-    public static let surfaceRaised  = Color(light: "#FFFFFF", dark: "#25292C") // WHOOP grey list-card fill (sampled)
-    public static let surfaceOverlay = Color(light: "#FFFFFF", dark: "#1C1F26") // popovers / sheets / tooltips
-    public static let surfaceInset   = Color(light: "#E9E9EE", dark: "#1F2229") // wells / chart insets / segmented track
-    public static let hairline       = Color(light: "#D8D0BD", dark: "#21304A") // soft 1px border (stronger on light for card edges)
-    public static let hairlineStrong = Color(light: "#C7BCA4", dark: "#2E3C57") // hover / emphasis border
+    // Background is pure WHOOP matte black; cards float just above it.
+    public static let surfaceBase    = Color(light: "#0A0B0D", dark: "#0A0B0D") // Pure WHOOP matte black canvas
+    public static let surfaceRaised  = Color(light: "#16181C", dark: "#16181C") // WHOOP dark grey list-card fill
+    public static let surfaceOverlay = Color(light: "#1C1E24", dark: "#1C1E24") // popovers / sheets / tooltips
+    public static let surfaceInset   = Color(light: "#121418", dark: "#121418") // wells / chart insets / segmented track
+    public static let hairline       = Color(light: "#24282E", dark: "#24282E") // soft 1px border
+    public static let hairlineStrong = Color(light: "#343A44", dark: "#343A44") // hover / emphasis border
 
-    // MARK: Text — deep navy-ink on paper / cool off-white on navy
-    public static let textPrimary    = Color(light: "#1A2230", dark: "#F4F6F8")
-    public static let textSecondary  = Color(light: "#4C5564", dark: "#C8CFD8")
-    public static let textTertiary   = Color(light: "#7C8696", dark: "#8A94A4")
+    // MARK: Text — crisp off-white on WHOOP black
+    public static let textPrimary    = Color(light: "#F4F6F8", dark: "#F4F6F8")
+    public static let textSecondary  = Color(light: "#C8CFD8", dark: "#C8CFD8")
+    public static let textTertiary   = Color(light: "#8A94A4", dark: "#8A94A4")
 
     // MARK: Glow — ambient bloom behind heroes / charts (additive on dark; faint warm on light)
     public static let glowAmbient    = Color(light: "#F0E4C0", dark: "#3A2D0A")

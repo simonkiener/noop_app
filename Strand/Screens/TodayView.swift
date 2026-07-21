@@ -265,8 +265,6 @@ struct TodayView: View {
     // than a blanket "on-device" claim. Absent until loaded / when a day has no value. (spec 2026-06-20)
     @State private var provenanceByMetric: [String: String] = [:]
 
-    // On-device steps ESTIMATE per day (key "steps_est", computed "-noop" source). The Steps tile
-    // prefers a REAL step count (strap @57 counter / Apple Health); only when a day has neither does it
     // fall back to this estimate, shown with an "est." caption so it's never read as a measured count.
     // Loaded once via exploreSeries (same merged read fitness_age/vitality use), keyed by day. (#150)
     @State private var stepsEstByDay: [String: Int] = [:]
@@ -931,16 +929,12 @@ struct TodayView: View {
         #endif
     }
 
-    #if os(iOS)
     /// The day-nav label: relative for today/yesterday, else a short date.
     private var dayNavLabel: String {
         switch selectedDayOffset {
         case 0:  return String(localized: "Today")
         case 1:  return String(localized: "Yesterday")
         default:
-            // Anchor to the LOGICAL day, not raw Date(), so the a11y date label agrees with the visible
-            // date and the picker highlight in the 00:00-04:00 window (a raw Date() reads a calendar day
-            // ahead there, mismatching at offset >= 2) (#16).
             return Self.navDayFmt.string(from: selectedLogicalDay)
         }
     }
@@ -949,53 +943,26 @@ struct TodayView: View {
         let f = DateFormatter(); f.dateFormat = "EEE d MMM"; f.locale = Locale(identifier: "en_US_POSIX"); return f
     }()
 
-    /// The selected day as a small locale-aware numeric date ("28/06/2026" or "6/28/2026" per region). The
-    /// top bar shows just this now, no "Today" / "Yesterday" word and no prev/next arrows. Day-change is by
-    /// horizontal swipe or by tapping to open the picker, and the rotating hint below teaches both.
     private var dayNavDateText: String {
-        // At offset 0 date off the row the resolver actually surfaces (`repo.today?.day`, same as
-        // `selectedDayKey`) so the top-bar date matches Android (which dates off `today?.day`) and the
-        // data on screen, including the pre-04:00 case where `repo.today` is still the logical day's row
-        // but raw `selectedLogicalDay` formatting could read a calendar day ahead (#15). Past offsets, and
-        // a not-yet-banked today, fall back to the logical day.
         if selectedDayOffset == 0, let day = repo.today?.day, let date = Self.dayParser.date(from: day) {
             return date.formatted(date: .numeric, time: .omitted)
         }
         return selectedLogicalDay.formatted(date: .numeric, time: .omitted)
     }
 
-    /// Periodic one-word hint shown in place of the date for ~1.5s every ~10s (nil = show the date). With the
-    /// arrows gone the day-nav affordances are otherwise invisible, so this teaches them in the accent colour.
     @State private var dayNavHint: String? = nil
     private static let dayNavHints = ["Swipe", "Tap"]
-    #endif
 
-    /// #829 follow-up: the named coordinate space the day-swipe drag and the HR-chart frame reader share,
-    /// declared on the scaffold's content stack (the view the swipe gesture is attached to), so the mask's
-    /// containment check compares like with like. Content-relative, so it is scroll-position independent.
-    /// OUTSIDE the iOS conditional: the `.coordinateSpace` modifier and the chart's frame reader compile
-    /// on macOS too (only iOS consults the mask), so the constant must exist on both platforms.
     private static let daySwipeSpace = "todayDaySwipeSpace"
-    #if os(iOS)
 
-    /// #817 - the day-nav swipe. A horizontal drag flips the day: swipe right (toward today) to the newer
-    /// day, swipe left to the older one. Gated so it only fires on a clearly-horizontal drag past a small
-    /// threshold (vertical scrolling keeps winning), and clamped to `0 ... earliestDayOffset` so it can't
-    /// reach a future day or step older than the earliest banked day. Mirrors the chevron bounds exactly.
-    /// #829 follow-up: measured in the named `daySwipeSpace` and MASKED over the HR chart, a drag that
-    /// starts inside the chart's frame belongs to the chart's pinch/pan/double-tap, never a day flip.
+    #if os(iOS)
     private var daySwipeGesture: some Gesture {
         DragGesture(minimumDistance: 24, coordinateSpace: .named(Self.daySwipeSpace))
             .onEnded { value in
-                // #829 follow-up: the chart owns every touch that starts within its frame (its pan is the
-                // same horizontal drag). startLocation and hrChartFrame share the daySwipeSpace coordinate
-                // space, so this containment check is layout-direction safe with no RTL special-casing.
                 guard !hrChartFrame.contains(value.startLocation) else { return }
                 let dx = value.translation.width
                 let dy = value.translation.height
-                // Horizontal-dominant and far enough to count as a deliberate day flip.
                 guard abs(dx) > abs(dy) * 1.5, abs(dx) > 50 else { return }
-                // Swipe LEFT (dx < 0) -> OLDER day (+1 offset); swipe RIGHT -> NEWER day (-1 offset).
                 let delta = dx < 0 ? 1 : -1
                 let next = Self.clampedDayOffset(current: selectedDayOffset, delta: delta,
                                                  maxOffset: earliestDayOffset)
@@ -1003,16 +970,12 @@ struct TodayView: View {
                 withAnimation(StrandMotion.interactive) { selectedDayOffset = next }
             }
     }
+    #endif
 
-    /// Picker binding that converts a chosen date back to a whole-day offset (capped at today).
     private var dayPickerBinding: Binding<Date> {
         Binding(
-            // Pre-highlight the LOGICAL day for the current offset (not raw Date()), so in the 00:00-04:00
-            // window the calendar opens on the day actually shown rather than a calendar day ahead (#16).
             get: { selectedLogicalDay },
             set: { newValue in
-                // Offset from today's logical day (pure helper, unit-tested), so a pick in the rollover
-                // window maps to the same offset the visible date and a11y label count back from (#16).
                 selectedDayOffset = Self.pickedDayOffset(pickedDate: newValue,
                                                          anchorLogicalDay: Repository.logicalDay(Date()))
                 showDayPicker = false
@@ -1020,17 +983,9 @@ struct TodayView: View {
         )
     }
 
-    /// Compact WHOOP-style top bar: a profile/settings button (left), the centred ‹ Today › day-nav
-    /// (bold, tappable to jump to a date), and the strap-battery badge (right).
-    /// Apple-style large-title header: a tappable "Today ⌄" + full date on the left (taps to change day),
-    /// then updates / quick-add / and an OBVIOUS menu avatar (opens Settings) on the right.
     @ViewBuilder private var todayTopBar: some View {
         HStack(alignment: .center, spacing: 10) {
             Button { showDayPicker = true } label: {
-                // Just the date, small (locale numeric), no relative word and no prev/next arrows. Every ~10s
-                // it swaps for ~1.5s to a one-word "Swipe" / "Tap" hint in the accent colour so users learn
-                // they can change the day by swiping across or tapping here. fixedSize makes it claim its own
-                // width so a tight top bar never compresses it, and the trailing icon cluster keeps its room.
                 Text(dayNavHint ?? dayNavDateText)
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundStyle(dayNavHint != nil ? StrandPalette.accent : StrandPalette.textPrimary)
@@ -1043,28 +998,18 @@ struct TodayView: View {
             .layoutPriority(1)
             .accessibilityLabel("\(dayNavLabel). Swipe or tap to change day")
             .popover(isPresented: $showDayPicker) {
-                // Cap at the LOGICAL day (not raw Date()) so the calendar never offers a day ahead of the
-                // data in the 00:00-04:00 window, matching the visible date + a11y label (#16).
                 DatePicker("", selection: dayPickerBinding, in: ...Repository.logicalDay(Date()),
                            displayedComponents: [.date])
                     .datePickerStyle(.graphical).labelsHidden().padding(12)
-                    // #840, give the graphical picker an explicit size so the iPad popover bubble doesn't
-                    // clip the calendar grid (anchored to a 13pt label it otherwise sizes too small).
                     .frame(minWidth: 320, minHeight: 360)
             }
 
             Spacer(minLength: 8)
 
-            // Uniform 36pt circular icon set: recording-status light, updates bell, quick-add (+), menu.
             HStack(spacing: 8) {
-                // Recording status, a colour-coded light (green recording / amber synced / red not
-                // recording), replacing the old full-width banner. Taps to Devices to connect. Its OWN
-                // subview observes LiveState so a ~1 Hz HR tick re-renders just this 36pt dot, not all of
-                // Today (the scroll-stutter fix, see the @EnvironmentObject note at the top of the type).
                 RecordingStatusLight(selectedDayOffset: selectedDayOffset) {
                     StrandHaptic.selection.play(); router.openDevices()
                 }
-                // Updates bell.
                 Button { showUpdatesInbox = true } label: {
                     Image(systemName: updateStore.unreadCount > 0 ? "bell.badge" : "bell")
                         .font(.system(size: 15, weight: .medium))
@@ -1088,19 +1033,6 @@ struct TodayView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Updates")
-                // Quick-action + (the accented primary, gold, same 36 size as the rest).
-                Button { router.requestQuickActions() } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(StrandPalette.goldDeepText)
-                        .frame(width: 36, height: 36)
-                        .background(Circle().fill(StrandPalette.accent))
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Quick actions")
-                .accessibilityHint("Start a workout, log your journal, or breathe")
-                // Menu (Settings), the avatar, same 36 size.
                 Button { showSettings = true } label: {
                     ProfileAvatarView(imageData: profile.avatarImageData, size: 36)
                         .contentShape(Circle())
@@ -1110,8 +1042,6 @@ struct TodayView: View {
             }
         }
         .frame(height: 46)
-        // Cycle the swipe/tap hint: roughly every 10s flash a one-word hint for ~1.5s, alternating "Swipe" /
-        // "Tap", then return to the date. One async loop, auto-cancelled when Today goes away (no leaked timer).
         .task {
             var i = 0
             while !Task.isCancelled {
@@ -1125,21 +1055,20 @@ struct TodayView: View {
         }
     }
 
-    /// Settings presented as a sheet from the top-bar profile button (sheets inherit the app
-    /// environment on iOS, so SettingsView gets the same objects it has under the More tab).
     private var settingsSheet: some View {
         NavigationStack {
             SettingsView()
                 .background(StrandPalette.surfaceBase.ignoresSafeArea())
+                #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
+                #endif
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarItem {
                         Button("Done") { showSettings = false }.foregroundStyle(StrandPalette.accent)
                     }
                 }
         }
     }
-    #endif
 
     /// The Updates "ringer": a bell button (~30pt) with a small gold unread-count badge. Tapping opens
     /// the Updates inbox sheet. Shared by the iOS top bar and the macOS toolbar.
@@ -1176,13 +1105,9 @@ struct TodayView: View {
     var body: some View {
         ScreenScaffold(title: scaffoldTitle, onRefresh: { await repo.refresh() }, lazy: true) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
-                #if os(iOS)
-                // Compact top bar: profile/settings (left) · ‹ Today › day-nav (centre, bold) · strap
-                // battery (right). Replaces the big title + the full-width day-nav pill (WHOOP-style).
                 todayTopBar
                 HealthAlertBanner()
-                #else
-                HealthAlertBanner()
+                #if os(macOS)
                 // Browse past days: chevrons + a date jump capped at today (no future days). Anchored to
                 // the LOGICAL day (the same anchor `selectedLogicalDay` uses) so the full-date label tracks
                 // the data shown in the 00:00-04:00 window instead of jumping a calendar day ahead (#14).
@@ -1331,18 +1256,7 @@ struct TodayView: View {
         // this path is unavailable (no nav bar on a primary tab) and the 560pt panel would overflow
         // iPhone, so the in-content `supportRow` + auto-sized `.sheet` below take over instead.
         .toolbar {
-            // Support heart on the LEADING (left) edge of the window toolbar.
-            ToolbarItem(placement: .navigation) {
-                Button { showingSupport = true } label: {
-                    Image(systemName: "heart.fill")
-                        .foregroundStyle(StrandPalette.metricRose)
-                        .attentionWiggle(period: 4)
-                }
-                .help("Support NOOP: help and contact")
-                .accessibilityLabel("Support NOOP: help and contact")
-            }
-            // The Updates "ringer" on the TRAILING (top-right) edge, separated from the heart (iOS hosts
-            // it in the compact top bar instead).
+            // The Updates "ringer" on the TRAILING (top-right) edge.
             ToolbarItem(placement: .primaryAction) {
                 updateBell.help("Updates")
             }
@@ -2511,21 +2425,14 @@ struct TodayView: View {
         // and never clips. Until the first layout measures width, fall back to a sensible phone width so the
         // rings render at a reasonable size on the very first frame rather than collapsing.
         let measured = heroRingRowWidth > 1 ? heroRingRowWidth : 345
-        // Design Reset: three EQUAL clean rings (no glow, faint track) in Charge / Effort / Rest order with
-        // generous spacing, mirroring the flat mockup. Sized off width so they stay equal on any phone.
         let ring = Self.heroRingDiameter(rowWidth: measured)
         HStack(alignment: .top, spacing: 22) {
-            heroRingColumn(section: .rest, domain: .rest, provenanceKey: "sleep_performance") { restRing(diameter: ring) }
-            // Component 4: Charge/Rest badge their real per-day merge winner; Effort has no badge.
-            // A1 (#514/#706): the Charge ring is TAPPABLE (a small chevron cue overlays the ring's bottom
-            // edge, INSIDE the ring frame so it adds no stacked height, keeping the #762 self-sizing row
-            // untouched). It opens the Charge breakdown sheet (the existing ChargeBreakdownSection), built
-            // lazily on tap. No new badge/dot/tier sits under the ring (that would re-load the #762 stack).
             heroRingColumn(section: .charge, domain: .charge, provenanceKey: "recovery",
                            onRingTap: { showChargeBreakdown = true }) {
                 chargeRing(score: score, d: d, diameter: ring)
             }
             heroRingColumn(section: .effort, domain: .effort) { effortRing(d: d, diameter: ring) }
+            heroRingColumn(section: .rest, domain: .rest, provenanceKey: "sleep_performance") { restRing(diameter: ring) }
         }
         .frame(maxWidth: .infinity, alignment: .center)
         // Zero-impact width reader: a clear background that publishes the row's width up via preference. It

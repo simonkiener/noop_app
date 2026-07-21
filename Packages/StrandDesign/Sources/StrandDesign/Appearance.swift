@@ -74,15 +74,14 @@ public enum AppearanceMode: String, CaseIterable, Identifiable, Sendable {
     /// The `ColorScheme` to force, or `nil` to follow the system (the `.system` case).
     public var colorScheme: ColorScheme? {
         switch self {
-        case .system: return nil
         case .light:  return .light
-        case .dark:   return .dark
+        default:      return .dark
         }
     }
 
-    /// Resolve a stored raw value (tolerant of an unknown/missing value → `.system`).
+    /// Resolve a stored raw value (tolerant of an unknown/missing value → `.dark`).
     public static func resolve(_ raw: String) -> AppearanceMode {
-        AppearanceMode(rawValue: raw) ?? .system
+        AppearanceMode(rawValue: raw) ?? .dark
     }
 }
 
