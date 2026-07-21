@@ -51,31 +51,12 @@ import java.util.zip.ZipInputStream
 object WearableExportImporter {
 
     enum class Brand(val sourceId: String, val label: String) {
-        OURA("oura-import", "Oura"),
         FITBIT("fitbit-import", "Fitbit"),
-        GARMIN("garmin-import", "Garmin"),
     }
 
     private const val MAX_ENTRY_BYTES = 256L shl 20  // per-entry uncompressed ceiling (zip-bomb guard)
     private const val MAX_FILES = 200_000
     private const val MAX_ROWS = 5_000_000
-
-    // Oura CSV detection (#857). Header keys are already HeaderNorm-normalized.
-    private val OURA_CSV_DATE_KEYS = setOf("date", "day", "summary_date", "calendar_date")
-    // Columns that mark a CSV as an Oura wellness export. Covers BOTH a combined daily-summary CSV and
-    // Oura's REAL per-category CSVs, each carrying only its own category's columns (#862): readiness →
-    // `temperature_deviation`, activity → `steps`/`active_calories`, vo2max → `vo2_max`, spo2 →
-    // `spo2_percentage`, sleep period → `total_sleep_duration`.
-    private val OURA_CSV_SIGNAL_COLUMNS = setOf(
-        "total_sleep_duration", "rem_sleep_duration", "deep_sleep_duration", "light_sleep_duration",
-        "sleep_efficiency", "efficiency", "average_hrv", "average_breath",
-        "average_resting_heart_rate", "lowest_resting_heart_rate", "lowest_heart_rate",
-        "readiness_score", "sleep_score", "respiratory_rate", "temperature_deviation",
-        "active_calories", "total_calories", "equivalent_walking_distance",
-        "vo2_max", "spo2_percentage", "breathing_disturbance_index", "contributors",
-    )
-    // Filename fragments that mark an Oura per-category CSV export (lowercased, substring match).
-    private val OURA_CSV_FILENAMES = listOf("heartrate", "heart_rate", "readiness", "sleep_periods")
 
     private val DAY_FMT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
@@ -108,25 +89,13 @@ object WearableExportImporter {
         if (files.isEmpty()) return ImportSummary.failure("Wearable export", "No readable JSON/CSV in the export.")
 
         val brand = detectBrand(files)
-            ?: return ImportSummary.failure("Wearable export", "Not an Oura, Fitbit or Garmin data export.")
+            ?: return ImportSummary.failure("Wearable export", "Not a Fitbit data export.")
 
         val parsed = when (brand) {
-            Brand.OURA -> parseOura(files)
             Brand.FITBIT -> parseFitbit(files)
-            Brand.GARMIN -> parseGarmin(files)
         }
         if (parsed.days.isEmpty() && parsed.sleeps.isEmpty()) {
-            // A lone Oura `heartrate.csv` is a raw HR-sample file, not a daily summary, so it carries no
-            // recovery/sleep/HRV to map. Say so plainly and point at the right file (#857).
-            if (brand == Brand.OURA && onlyHeartRateCsv(files)) {
-                return ImportSummary.failure(
-                    brand.label,
-                    "That file is Oura's raw heart-rate log, which has no daily sleep or recovery values to " +
-                        "import. Export your Oura data as JSON (Account -> Export Data), or pick the daily/" +
-                        "readiness CSV, and import that instead.",
-                )
-            }
-            return ImportSummary.failure(brand.label, "${brand.label} export held no sleep or daily wellness data.")
+            return ImportSummary.failure("Wearable export", "${brand.label} export held no sleep or daily wellness data.")
         }
         return persist(repo, brand, parsed)
     }
@@ -168,49 +137,22 @@ object WearableExportImporter {
 
     internal fun detectBrand(files: Map<String, ByteArray>): Brand? {
         val names = files.keys
-        if (names.any { it.contains("sleepdata") || it.contains("di_connect") || it.contains("userbiometric") || it.contains("_summarizedactivities") }) return Brand.GARMIN
         if (names.any { last(it).startsWith("sleep-") || last(it).startsWith("resting_heart_rate-") || last(it).startsWith("steps-") || it.contains("fitbit") }) return Brand.FITBIT
-        if (names.any { it.contains("oura") }) return Brand.OURA
-        // Oura CSV export (#857): the per-category files (`heartrate.csv` / `readiness.csv` / ...). Routing
-        // these to Oura (rather than failing detection) lets the importer give an HONEST per-file outcome:
-        // a daily-summary CSV imports, a lone raw heart-rate CSV reports "no daily wellness data".
-        if (names.any { name -> OURA_CSV_FILENAMES.any { name.contains(it) } }) return Brand.OURA
 
-        for ((name, data) in files.entries.take(8)) {
+        for ((_, data) in files.entries.take(8)) {
             brandFromJsonShape(data)?.let { return it }
-            if (name.endsWith(".csv") && looksLikeOuraCsv(CsvTable.fromData(data).normalizedHeaders)) return Brand.OURA
         }
         return null
     }
 
     private fun brandFromJsonShape(data: ByteArray): Brand? {
         val text = String(Bom.stripUtf8(data), Charsets.UTF_8)
-        val obj = runCatching { JSONObject(text) }.getOrNull()
-        if (obj != null) {
-            val keys = HashSet<String>()
-            val it = obj.keys()
-            while (it.hasNext()) keys.add(it.next().toString().lowercase())
-            if (keys.intersect(setOf("sleep", "daily_readiness", "daily_activity", "readiness", "activity")).isNotEmpty() && looksLikeOura(obj)) return Brand.OURA
-            if (obj.has("calendarDate") && (obj.has("deepSleepSeconds") || obj.has("restingHeartRate"))) return Brand.GARMIN
-        }
         val arr = runCatching { JSONArray(text) }.getOrNull()
         val first = arr?.optJSONObject(0)
         if (first != null) {
             if (first.has("dateOfSleep") || (first.has("dateTime") && first.has("value"))) return Brand.FITBIT
-            if (first.has("sleepStartTimestampGMT") || first.has("deepSleepSeconds")) return Brand.GARMIN
         }
         return null
-    }
-
-    private fun looksLikeOura(obj: JSONObject): Boolean {
-        for (key in listOf("sleep", "daily_readiness", "daily_activity", "daily_sleep", "readiness", "activity")) {
-            val arr = categoryArray(obj, key) ?: continue
-            val first = arr.optJSONObject(0) ?: continue
-            if (first.has("bedtime_start") || first.has("total_sleep_duration") || first.has("contributors") ||
-                first.has("temperature_deviation") || (first.has("day") && (first.has("score") || first.has("steps")))
-            ) return true
-        }
-        return false
     }
 
     // ------------------------------------------------------------------------

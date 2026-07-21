@@ -2,7 +2,6 @@ import SwiftUI
 import StrandDesign
 import StrandAnalytics   // ConnectionReadout - the #987 clock-latch / RTC-epoch readout parsers
 import WhoopStore
-import OuraProtocol
 
 // MARK: - Devices
 //
@@ -316,20 +315,7 @@ private struct DeviceCard: View {
                             .font(StrandFont.subhead)
                             .foregroundStyle(StrandPalette.textSecondary)
                     }
-                    Spacer()
-                    // Locally-adopted Oura is Beta: a non-dot Beta chip sits beside the usual state pill.
-                    if device.sourceKind == .oura {
-                        StatePill("Beta", tone: .warning, showsDot: false)
-                    }
                     statePill
-                }
-
-                // Honest local-takeover state row for an adopted Oura ring that is paired but not the
-                // active+connected source right now. States the single-owner reality plainly (if the ring
-                // was reset again or re-claimed in the Oura app, NOOP no longer owns it) without faking a
-                // live reading. Suppressed for the active+connected ring and for removed rings.
-                if device.sourceKind == .oura && !isLiveConnected && device.status == .paired {
-                    ouraLocalStateNote
                 }
 
                 // What this device CAPTURES — honest, per-model (not the generic stored set, which would
@@ -509,13 +495,10 @@ private struct DeviceCard: View {
         .accessibilityLabel("Device actions for \(device.displayName)")
     }
 
-    /// SF Symbol for the device: WHOOP keeps the band glyph; an FTMS machine reads as gym equipment;
+    /// SF Symbol for the device: WHOOP keeps the band glyph;
     /// an Apple Watch reads as a watch; generic straps read as a heart-rate strap.
     private var icon: String {
-        if device.sourceKind == .ftms { return "figure.run.treadmill" }
-        if device.sourceKind == .huami { return "waveform.path.ecg.rectangle" }
         if device.sourceKind == .liveAppleWatch { return "applewatch" }
-        if device.sourceKind == .oura { return "circle.circle" }
         return SourceCoordinator.isWhoop(device) ? "applewatch.side.right" : "heart.circle"
     }
 
@@ -543,23 +526,6 @@ private struct DeviceCard: View {
         return String(localized: "Last seen \(relativeAgo(TimeInterval(device.lastSeenAt)))")
     }
 
-    /// Honest paired-but-not-connected note for a locally-adopted Oura ring. Amber heads-up, no fabricated
-    /// reading: re-states the single-owner reality so the user understands why a re-reset / Oura re-claim
-    /// would break NOOP's ownership.
-    private var ouraLocalStateNote: some View {
-        HStack(alignment: .top, spacing: 6) {
-            Image(systemName: "info.circle")
-                .font(StrandFont.caption)
-                .foregroundStyle(StrandPalette.statusWarning)
-                .frame(width: 14)
-                .accessibilityHidden(true)
-            Text("Paired locally. NOOP owns this ring while it holds the key. If you reset it again or set it up in the Oura app, NOOP no longer owns it and you would re-add it to take it over.")
-                .font(StrandFont.caption)
-                .foregroundStyle(StrandPalette.statusWarning)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
     /// A battery SF Symbol matching the charge band (mirrors the menu-bar battery glyph buckets).
     private func batterySymbol(_ pct: Int) -> String {
         switch pct {
@@ -575,61 +541,13 @@ private struct DeviceCard: View {
 // MARK: - Capability profile
 
 /// Honest, per-model summary of what a device captures and what NOOP uses it for — shown on its card.
-///
-/// Derived from brand/model/sourceKind, NOT from the stored capability `Set`. The stored set is generic
-/// across WHOOP models (it would render an identical "Heart rate · HRV · Blood oxygen · Skin temp · …"
-/// line for a 4.0 and a 5/MG alike) and it mislabels: no SpO₂ **percentage** ever comes off any WHOOP
-/// strap (raw red/IR only — a real % exists only from a WHOOP CSV / Apple Health import), skin temp is a
-/// nightly ±°C sleep deviation rather than a live reading, steps are 5/MG-only and a raw motion count,
-/// and Charge/Effort/Rest are NOOP-derived scores. Verdicts are source-verified against the decode +
-/// scoring paths (the device-capability audit). `*` in a label = an on-device estimate, not a raw sensor.
 struct DeviceCapabilityProfile {
     let displayModel: String   // clean card subtitle (replaces the redundant "WHOOP · WHOOP")
     let captures: String       // "·"-joined honest capture labels for THIS model
     let powers: String         // the NOOP scores / screens this device drives
-    let footnote: String       // one short honest caveat line ("*" estimates + the SpO₂/steps notes)
+    let footnote: String       // one short honest caveat line
 
     static func make(for d: PairedDevice) -> DeviceCapabilityProfile {
-        // FTMS gym machine: a live machine + (when reported) HR session, recorded via the existing
-        // live-workout path. Honest — we surface the machine's metrics + HR live; the session is
-        // Effort-scored only when the machine actually reports heart rate.
-        if d.sourceKind == .ftms {
-            return DeviceCapabilityProfile(
-                displayModel: String(localized: "Gym equipment (FTMS)"),
-                captures: String(localized: "Speed · Cadence · Power · Distance · Energy · Heart rate (if the machine sends it)"),
-                powers: String(localized: "Records a live machine workout, Effort-scored from HR when the machine reports it"),
-                footnote: String(localized: "Live machine data over Bluetooth FTMS. No sleep, recovery, skin temp or SpO₂. Effort needs the machine's heart rate; without it the session logs the machine metrics only."))
-        }
-        // EXPERIMENTAL Huami device (Amazfit / Zepp / Mi Band): best-effort live HR only, honest about it.
-        if d.sourceKind == .huami {
-            return DeviceCapabilityProfile(
-                displayModel: String(localized: "\(d.brand) (experimental)"),
-                captures: String(localized: "Heart rate (live, best-effort)"),
-                powers: String(localized: "Powers the live console + Effort. No Charge, Rest or Sleep"),
-                footnote: String(localized: "Experimental: live heart rate where the band exposes it. Some bands need a pairing we can't do yet. NOOP will say so honestly and never show a made-up number. No sleep, recovery, skin temp, SpO₂ or steps."))
-        }
-        // EXPERIMENTAL locally-adopted Oura ring (gen 3/4/5). The gen is carried on `model` ("Oura Ring
-        // 3/4/5") and recovered with OuraRingGen.from(model:). NOOP reads the ring's OWN raw signals + open
-        // HRV/sleep-phase tags and computes its own Charge/Effort/Rest; it NEVER reads Oura's encrypted
-        // Readiness/Sleep scores, and claims NO absolute SpO₂ %. Estimates carry "*"; a signal it can't read
-        // stays "-". Per-gen copy and the canonical Beta caveat (spec
-        // docs/superpowers/specs/2026-06-29-oura-onboarding-ux.md s3/s4).
-        if d.sourceKind == .oura {
-            let gen = OuraRingGen.from(model: d.model)
-            // gen3/4 are verified-shape; gen5 ("newer") carries the least-proven caveat.
-            let newer = (gen == .gen5)
-            let captures = newer
-                ? String(localized: "Heart rate* · HRV* · Sleep* · Resting HR* · Skin temp* · Battery*")
-                : String(localized: "Heart rate · HRV* · Sleep · Resting HR · Skin temp* · Battery")
-            let powers = newer
-                ? String(localized: "Powers Effort now; Charge and Rest once enough nights and decode are confirmed")
-                : String(localized: "Powers Charge, Effort, Rest and Sleep")
-            return DeviceCapabilityProfile(
-                displayModel: String(localized: "\(gen.displayName) (Beta)"),
-                captures: captures,
-                powers: powers,
-                footnote: String(localized: "Beta. * is an on-device estimate. Skin temp is a trend versus your own baseline, and HRV needs you to be still. No Oura Readiness or SpO₂ percentage comes off the ring (import an Oura file for those)."))
-        }
         // Apple Watch (live HealthKit source). UNLIKE the WHOOP/strap branches, the watch's stored
         // capability `Set` is already the honest per-model trim (AppleWatchDevice only adds a metric
         // once real data for it arrives), so we read the labels straight off it. An older watch with
@@ -738,15 +656,6 @@ struct DeviceCardCatalog: View {
                      status: .paired, addedAt: 0, lastSeenAt: 0)
     }
 
-    /// A locally-adopted Oura ring (sourceKind `.oura`), built with mock data so the honest per-gen Beta
-    /// card renders deterministically WITHOUT a ring. `model` carries the gen ("Oura Ring 3/4/5").
-    static func oura(_ model: String, status: DeviceStatus = .paired) -> PairedDevice {
-        PairedDevice(id: "oura-demo-\(model)", brand: "Oura", model: model, nickname: nil,
-                     peripheralId: "00000000-0000-0000-0000-0000000000aa", sourceKind: .oura,
-                     capabilities: [.hr, .hrv, .spo2, .skinTemp, .sleep],
-                     status: status, addedAt: 0, lastSeenAt: 0)
-    }
-
     var body: some View {
         ScreenScaffold(title: "Devices",
                        subtitle: "What each band captures (and what NOOP uses it for).",
@@ -765,34 +674,6 @@ struct DeviceCardCatalog: View {
                 // Apple Watch, with an older-model trimmed set (no SpO₂ / wrist temp) so the honest
                 // capability read renders deterministically alongside the straps.
                 DeviceCard(device: Self.watch([.hr, .hrv, .sleep, .steps]),
-                           isActive: false, isLiveConnected: false,
-                           onMakeActive: {}, onRename: {}, onRemove: {})
-                // Locally-adopted Oura ring (Beta): per-gen honest capability copy + the Beta chip + the
-                // paired-but-not-connected local-state note, all without a ring on-wrist.
-                DeviceCard(device: Self.oura("Oura Ring 3"),
-                           isActive: false, isLiveConnected: false,
-                           onMakeActive: {}, onRename: {}, onRemove: {})
-            }
-        }
-    }
-}
-
-/// DEBUG-only: just the locally-adopted Oura device card, active + connected, so `--demo-screen ouradevice`
-/// can screenshot the Beta Oura card (battery + "Active · Live") WITHOUT a ring. Same file as `DeviceCard`
-/// so it can reach it. Stripped from Release.
-struct OuraDeviceDemoScreen: View {
-    var body: some View {
-        ScreenScaffold(title: "Devices",
-                       subtitle: "A locally-adopted Oura ring, in beta.",
-                       topBackground: liquidScaffoldSky()) {
-            VStack(spacing: NoopMetrics.gap) {
-                // Active + connected so the card shows "Active · Live" + a live battery readout.
-                DeviceCard(device: DeviceCardCatalog.oura("Oura Ring 3"),
-                           isActive: true, isLiveConnected: true, liveBatteryPct: 71,
-                           onMakeActive: {}, onRename: {}, onRemove: {})
-                // A second, paired-but-not-connected gen-4 ring so the honest local-state note + per-gen
-                // copy render in the same shot.
-                DeviceCard(device: DeviceCardCatalog.oura("Oura Ring 4"),
                            isActive: false, isLiveConnected: false,
                            onMakeActive: {}, onRename: {}, onRemove: {})
             }

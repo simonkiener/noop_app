@@ -11,18 +11,15 @@ public struct ImportCoordinator {
 
     private let appleHealth: AppleHealthImporter
     private let whoop: WhoopExportImporter
-    private let xiaomi: XiaomiBandImporter
     private let wearable: WearableExportImporter
 
     public init(
         appleHealth: AppleHealthImporter = AppleHealthImporter(),
         whoop: WhoopExportImporter = WhoopExportImporter(),
-        xiaomi: XiaomiBandImporter = XiaomiBandImporter(),
         wearable: WearableExportImporter = WearableExportImporter()
     ) {
         self.appleHealth = appleHealth
         self.whoop = whoop
-        self.xiaomi = xiaomi
         self.wearable = wearable
     }
 
@@ -52,14 +49,7 @@ public struct ImportCoordinator {
         try whoop.import(from: url)
     }
 
-    /// Parse a Xiaomi / Mi Band export (the Mi Fitness sandbox folder, a `.zip` of it,
-    /// or the bare `<user_id>.db`).
-    public func importXiaomiBand(from url: URL) throws -> XiaomiImportResult {
-        try xiaomi.import(from: url)
-    }
-
-    /// Parse a user's own Oura / Fitbit / Garmin data export (a `.json`, a folder, or a `.zip`).
-    /// The brand is auto-detected by content.
+    /// Parse a user's own Fitbit data export (a `.json`, a folder, or a `.zip`).
     public func importWearableExport(from url: URL) throws -> WearableImportResult {
         try wearable.import(from: url)
     }
@@ -70,14 +60,12 @@ public struct ImportCoordinator {
     public enum DetectedImport: Sendable, Equatable {
         case appleHealth(AppleHealthImportResult)
         case whoopExport(WhoopImportResult)
-        case xiaomiBand(XiaomiImportResult)
         case wearable(WearableImportResult)
 
         public var kind: DataSourceKind {
             switch self {
             case .appleHealth: return .appleHealth
             case .whoopExport: return .whoopExport
-            case .xiaomiBand: return .xiaomiBand
             case .wearable(let r): return r.brand.dataSourceKind
             }
         }
@@ -86,7 +74,6 @@ public struct ImportCoordinator {
             switch self {
             case .appleHealth(let r): return r.summary
             case .whoopExport(let r): return r.summary
-            case .xiaomiBand(let r): return r.summary
             case .wearable(let r): return r.summary
             }
         }
@@ -105,10 +92,8 @@ public struct ImportCoordinator {
         do {
             kind = try detectKind(of: url)
         } catch ImportError.notAZipOrFolder {
-            // A readable file with no first-party marker: hand it to the Oura/Fitbit/Garmin wearable
-            // export importer, which sniffs the brand by content. ONLY this case falls through. A
-            // genuinely missing file (fileNotFound) or any other structural error is re-thrown so the
-            // user sees the real problem instead of a misleading "not an Oura/Fitbit/Garmin export".
+            // A readable file with no first-party marker: hand it to the wearable
+            // export importer, which sniffs the brand by content. ONLY this case falls through.
             return .wearable(try wearable.import(from: url))
         }
         switch kind {
@@ -116,11 +101,7 @@ public struct ImportCoordinator {
             return .appleHealth(try appleHealth.import(from: url))
         case .whoopExport:
             return .whoopExport(try whoop.import(from: url))
-        case .xiaomiBand:
-            return .xiaomiBand(try xiaomi.import(from: url))
-        // detectKind never returns the wearable-import kinds (it has no marker for them) — the wearable
-        // importer owns brand detection. Unreachable but kept exhaustive.
-        case .ouraImport, .fitbitImport, .garminImport:
+        case .fitbitImport:
             return .wearable(try wearable.import(from: url))
         }
     }
@@ -135,8 +116,6 @@ public struct ImportCoordinator {
 
         let ext = url.pathExtension.lowercased()
         if ext == "xml" { return .appleHealth }
-        // A bare Mi Fitness SQLite file.
-        if ext == "db" { return .xiaomiBand }
 
         let names = try entryFilenames(of: url, isDirectory: isDir.boolValue)
         if names.contains("export.xml") { return .appleHealth }
@@ -144,9 +123,6 @@ public struct ImportCoordinator {
             "physiological_cycles.csv", "sleeps.csv", "workouts.csv", "journal_entries.csv",
         ]
         if !names.isDisjoint(with: whoopNames) { return .whoopExport }
-
-        // Mi Fitness sandbox: a `DataBase/<user_id>/de/<user_id>.db` somewhere inside.
-        if try containsMiFitnessDB(of: url, isDirectory: isDir.boolValue) { return .xiaomiBand }
 
         throw ImportError.notAZipOrFolder(url.path)
     }

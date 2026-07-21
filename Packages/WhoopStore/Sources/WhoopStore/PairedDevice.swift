@@ -40,26 +40,9 @@ public enum DeviceStatus: String, Sendable, CaseIterable { case active, paired, 
 
 public enum SourceKind: String, Sendable, CaseIterable {
     case liveBLE, historyBLE, cloudImport, fileImport
-    /// A live FTMS (Fitness Machine Service, 0x1826) gym machine — treadmill / indoor bike / rower /
-    /// cross-trainer. Streams a live machine-data + HR session that records via the existing live-workout
-    /// path. Additive: existing rows never carry this; only the gym-equipment wizard writes it.
-    case ftms
-    /// An EXPERIMENTAL Huami-family live HR source — Amazfit / Zepp (incl. Helio) and Xiaomi Mi Band.
-    /// Reads the standard 0x180D HR service when exposed, else the documented Huami custom HR
-    /// characteristic, else surfaces an honest "needs pairing we can't do" message. Best-effort, shipped
-    /// behind the experimental add-device tier. Additive: only the experimental wizard writes it.
-    /// (Garmin uses `liveBLE` — its live HR is the standard broadcast-HR path, no proprietary protocol.)
-    case huami
     /// Apple Watch streamed via HealthKit (live HealthKit observer + background delivery). Apple-only,
     /// no Android twin. Additive: only the Apple Watch device registration writes it.
     case liveAppleWatch
-    /// An EXPERIMENTAL live Oura Ring (gen 3/4/5) source over the ring's own clean-room BLE protocol
-    /// (OuraProtocol package). Owns its OWN central/GATT, never the WHOOP path. Surfaces only the ring's
-    /// decoded raw signals + open HRV/sleep-phase tags (capabilities {hr, hrv, spo2, skinTemp, sleep});
-    /// NOOP computes its own Charge/Rest and never reads Oura's encrypted readiness/sleep scores. When a
-    /// signal can't be read it stays "-" (Huami precedent), never faked. Additive (no DB migration): only
-    /// the experimental add-device wizard's Oura path writes it.
-    case oura
 }
 
 /// Canonical metric a source can provide. Drives capability-aware UI + the day-owner resolver.

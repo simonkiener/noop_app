@@ -81,13 +81,12 @@ struct DataSourcesView: View {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionSpacing) {
                 whoopCard.staggeredAppear(index: 0)
                 appleHealthCard.staggeredAppear(index: 1)
-                xiaomiCard.staggeredAppear(index: 2)
-                nutritionCard.staggeredAppear(index: 3)
-                liftingCard.staggeredAppear(index: 4)
-                activityFileCard.staggeredAppear(index: 5)
-                wearableCard.staggeredAppear(index: 6)
-                broadcastHrCard.staggeredAppear(index: 7)
-                liveCard.staggeredAppear(index: 8)
+                nutritionCard.staggeredAppear(index: 2)
+                liftingCard.staggeredAppear(index: 3)
+                activityFileCard.staggeredAppear(index: 4)
+                wearableCard.staggeredAppear(index: 5)
+                broadcastHrCard.staggeredAppear(index: 6)
+                liveCard.staggeredAppear(index: 7)
             }
         }
         .onAppear {
@@ -185,26 +184,6 @@ struct DataSourcesView: View {
         }
     }
 
-    private var xiaomiCard: some View {
-        card(title: "Xiaomi Smart Band (Mi Band)", icon: "figure.walk.motion",
-             tint: StrandPalette.metricAmber,
-             subtitle: String(localized: "Import your Mi Band history (steps, heart rate, resting HR, sleep stages, SpO₂, stress and sleep score) straight from the Mi Fitness app. On your iPhone: Files → On My iPhone → Mi Fitness, long-press the folder → Compress, then choose the .zip here. Fully offline; no Xiaomi account or Bluetooth needed. Smart Band 8/9/10.")) {
-            let importingXiaomi = model.isImporting(.xiaomi)
-            HStack(spacing: NoopMetrics.space3) {
-                Button { presentImporter(.xiaomi) } label: {
-                    Label(importingXiaomi ? "Importing…" : "Choose Mi Fitness export…", systemImage: "tray.and.arrow.down")
-                }
-                .buttonStyle(NoopButtonStyle(.primary))
-                .disabled(model.hasActiveImport || nutritionImporting || liftingImporting || activityFileImporting)
-                if importingXiaomi { ProgressView().controlSize(.small) }
-            }
-            if let s = model.xiaomiImportSummary {
-                Text(s).font(StrandFont.subhead)
-                    .foregroundStyle(model.xiaomiImportFailed ? StrandPalette.statusWarning : StrandPalette.statusPositive)
-            }
-        }
-    }
-
     private var nutritionCard: some View {
         card(title: String(localized: "Nutrition (.csv)"), icon: "fork.knife",
              tint: StrandPalette.metricAmber,
@@ -263,9 +242,9 @@ struct DataSourcesView: View {
     }
 
     private var wearableCard: some View {
-        card(title: String(localized: "Oura / Fitbit / Garmin export"), icon: "figure.mind.and.body",
+        card(title: String(localized: "Fitbit export"), icon: "figure.mind.and.body",
              tint: StrandPalette.metricPurple,
-             subtitle: String(localized: "Import your own data export from Oura, Fitbit or Garmin: sleep, resting heart rate, HRV, steps and more, where the export has them. Download it from the brand's app (Oura: Account → Export Data; Fitbit: Google Takeout; Garmin: Export Your Data), then choose the file here. Fully offline; nothing leaves \(Platform.deviceNounPhrase). Each brand's own readiness or sleep score is kept for reference only. Your scores stay yours.")) {
+             subtitle: String(localized: "Import your own data export from Fitbit: sleep, resting heart rate, HRV, steps and more. Download it from Google Takeout (Fitbit), then choose the file here. Fully offline; nothing leaves \(Platform.deviceNounPhrase).")) {
             HStack(spacing: NoopMetrics.space3) {
                 Button { presentImporter(.wearable) } label: {
                     Label(wearableImporting ? "Importing…" : "Choose export…", systemImage: "tray.and.arrow.down")
@@ -315,8 +294,6 @@ struct DataSourcesView: View {
             model.importWhoop(url: url)
         case .appleHealth:
             model.importAppleHealth(url: url)
-        case .xiaomi:
-            model.importXiaomi(url: url)
         case .nutrition:
             importNutrition(url: url)
         case .lifting:
@@ -628,7 +605,6 @@ struct DataSourcesView: View {
     private enum ImportTarget {
         case whoop
         case appleHealth
-        case xiaomi
         case nutrition
         case lifting
         case activityFile
@@ -651,15 +627,6 @@ struct DataSourcesView: View {
                 return [.zip, .xml, .folder]
                 #else
                 return [.zip, .xml]
-                #endif
-            case .xiaomi:
-                // The Mi Fitness sandbox is shared as a .zip (or, on macOS, an unzipped
-                // folder); the bare `<user_id>.db` is also accepted directly.
-                let db = UTType(filenameExtension: "db") ?? .data
-                #if os(macOS)
-                return [.zip, .folder, db]
-                #else
-                return [.zip, db]
                 #endif
             case .nutrition:
                 return [.commaSeparatedText, .plainText]

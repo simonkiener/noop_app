@@ -7,21 +7,9 @@ import Foundation
 public enum DataSourceKind: String, Sendable, Codable, Equatable, CaseIterable {
     case appleHealth
     case whoopExport
-    /// Xiaomi Smart Band (Mi Band) — imported from the Mi Fitness iOS app's
-    /// on-device SQLite store (`DataBase/<user_id>/de/<user_id>.db`). Account-free,
-    /// fully offline: NOOP reads the file the user already owns.
-    case xiaomiBand
-    /// Oura Ring — the user's own Account data export (JSON), imported from the file
-    /// Oura hands them. Sleep periods + daily readiness/activity → daily metrics + sleep
-    /// sessions. Fully offline, no Oura cloud/API.
-    case ouraImport
     /// Fitbit — the user's own Google Takeout → Fitbit JSON export (per-day sleep /
     /// resting_heart_rate / steps / heart_rate files). Fully offline, no Fitbit/Google API.
     case fitbitImport
-    /// Garmin — the user's own Garmin Connect "Export Your Data" (GDPR) wellness JSON/CSV
-    /// (sleep / resting HR / stress / steps). The FIT activity files inside the same ZIP are
-    /// handled by the wave-1 FIT parser; this path does the WELLNESS daily + sleep only.
-    case garminImport
 }
 
 // MARK: - Generic health sample (Apple Health Record sink)
@@ -453,34 +441,26 @@ public struct XiaomiImportResult: Sendable, Equatable {
 /// tag every imported row with an honest per-source label (`oura-import` / `fitbit-import` /
 /// `garmin-import`), so the UI never confuses Oura/Fitbit/Garmin data with WHOOP's.
 public enum WearableBrand: String, Sendable, Equatable, CaseIterable {
-    case oura
     case fitbit
-    case garmin
 
     /// The per-source partition / provenance id written as the Data Source device id (mirrors
-    /// `"my-whoop"` / `"apple-health"` / `"xiaomi-band"`). Honest: imported, not live.
+    /// `"my-whoop"` / `"apple-health"`). Honest: imported, not live.
     public var sourceId: String {
         switch self {
-        case .oura:   return "oura-import"
         case .fitbit: return "fitbit-import"
-        case .garmin: return "garmin-import"
         }
     }
 
     /// Human label for the import summary / Data Source card.
     public var displayName: String {
         switch self {
-        case .oura:   return "Oura"
         case .fitbit: return "Fitbit"
-        case .garmin: return "Garmin"
         }
     }
 
     public var dataSourceKind: DataSourceKind {
         switch self {
-        case .oura:   return .ouraImport
         case .fitbit: return .fitbitImport
-        case .garmin: return .garminImport
         }
     }
 }

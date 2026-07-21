@@ -1,7 +1,6 @@
 import Foundation
 import Combine
 import WhoopStore
-import OuraProtocol
 
 /// Runs exactly ONE device's live BLE at a time, driven by `DeviceRegistry.activeDeviceId`.
 ///
@@ -61,27 +60,7 @@ final class SourceCoordinator: ObservableObject {
 
     /// The lazily-created generic-strap source. nil until the first switch to a strap; reused after.
     private var standardSource: StandardHRSource?
-    /// The lazily-created FTMS gym-equipment source. nil until the first switch to a gym machine. An FTMS
-    /// device (sourceKind `.ftms`) is a non-WHOOP live source, so it runs through the SAME strap edge as
-    /// `standardSource` — only the source object differs. Exactly one of the two is ever live at a time.
-    private var ftmsSource: FTMSSource?
-    /// The lazily-created EXPERIMENTAL Huami source (Amazfit / Zepp / Mi Band). nil until the first switch
-    /// to a `.huami` device. Like the others it's a non-WHOOP live source sharing the same strap edge —
-    /// exactly one of the non-WHOOP sources is ever live at a time.
-    private var huamiSource: HuamiHRSource?
-    /// The lazily-created EXPERIMENTAL Oura source (Oura Ring gen 3/4/5). nil until the first switch to a
-    /// `.oura` device. Like the others it's a non-WHOOP live source sharing the same strap edge: exactly
-    /// one of the non-WHOOP sources is ever live at a time. It owns its OWN `CBCentralManager` and never
-    /// references `BLEManager`/`WhoopBleClient`, so the WHOOP path cannot regress.
-    @Published private(set) var ouraSource: OuraLiveSource?
-    /// The deviceId for which the user has granted explicit adopt consent (the wizard's irreversible gate +
-    /// "Take over this ring?" confirm). The NEXT `startOuraSource` for THIS id builds its live source with
-    /// `adoptIntent == true`, so the dangerous `0x24` key install can run for exactly that adopt session and
-    /// nothing else. Cleared as soon as it is consumed (or when adopt is cancelled), so a later reconnect of
-    /// the same ring is a normal read-only session that never re-installs a key.
-    private var pendingAdoptDeviceId: String?
-    /// The deviceId the active non-WHOOP source (`standardSource` / `ftmsSource` / `huamiSource` /
-    /// `ouraSource`) runs for.
+    /// The deviceId the active non-WHOOP source (`standardSource`) runs for.
     private var activeStrapId: String?
     /// True once we've transitioned onto a generic strap. While false (the default / WHOOP-active
     /// state), switching to WHOOP is a pure no-op — we never issue a redundant WHOOP (re)scan.
@@ -264,17 +243,7 @@ final class SourceCoordinator: ObservableObject {
         // Switching source→source: stop the previous non-WHOOP source before starting the new one.
         tearDownNonWhoopSource()
 
-        // Route by sourceKind: an FTMS gym machine runs FTMSSource; an EXPERIMENTAL Huami device
-        // (Amazfit / Zepp / Mi Band) runs the HuamiHRSource; an EXPERIMENTAL Oura ring runs the
-        // OuraLiveSource; everything else is a generic HR strap on StandardHRSource. All are non-WHOOP
-        // live sources sharing this same strap edge. (`.liveAppleWatch` never reaches this switch: it's
-        // short-circuited above.)
-        switch sourceKind(for: id) {
-        case .ftms:  startFTMSSource(id: id)
-        case .huami: startHuamiSource(id: id)
-        case .oura:  startOuraSource(id: id)
-        default:     startStandardSource(id: id)
-        }
+        startStandardSource(id: id)
         activeStrapId = id
         onStrap = true
     }
@@ -303,91 +272,9 @@ final class SourceCoordinator: ObservableObject {
         standardSource = source
     }
 
-    /// Start the isolated `FTMSSource` for a gym machine `id`. HR (when the machine reports it) rides the
-    /// SAME `LiveState` channel, so the existing live-workout recorder scores it — no new scoring loop.
-    private func startFTMSSource(id: String) {
-        let source = FTMSSource(
-            live: live,
-            log: straplog,
-            onBattery: { [live] pct in live.setBattery(Double(pct)) })
-        if let pid = peripheralId(for: id), let uuid = UUID(uuidString: pid) {
-            source.connect(uuid)
-        } else {
-            source.scan()
-        }
-        ftmsSource = source
-    }
-
-    /// Start the EXPERIMENTAL Huami source (Amazfit / Zepp / Mi Band) for `id`. HR (standard 0x180D when
-    /// exposed, else the documented Huami custom characteristic) rides the SAME `LiveState` channel as the
-    /// other sources, so the existing live UI + recorder handle it — no new scoring loop, no fabricated
-    /// data (the source stays at "—" when it can't read a real HR).
-    private func startHuamiSource(id: String) {
-        let source = HuamiHRSource(
-            live: live,
-            deviceId: id,
-            persist: { [storeHandle] streams in
-                Task { if let store = await storeHandle() { _ = try? await store.insert(streams, deviceId: id) } }
-            },
-            log: straplog,
-            onBattery: { [live] pct in live.setBattery(Double(pct)) })
-        if let pid = peripheralId(for: id), let uuid = UUID(uuidString: pid) {
-            source.connect(uuid)
-        } else {
-            source.scan()
-        }
-        huamiSource = source
-    }
-
-    /// Start the EXPERIMENTAL Oura source (Oura Ring gen 3/4/5) for `id`, driven by the clean-room
-    /// `OuraProtocol.OuraDriver`. Decoded raw signals (HR / IBI / HRV / SpO2 / temp / sleep-phase / battery)
-    /// ride the SAME `LiveState` + persist channels as the other sources, so NOOP scores the Oura day with
-    /// its OWN Charge/Rest exactly like a WHOOP day, while Oura's encrypted readiness/sleep scores are never
-    /// read or surfaced. The ring generation is recovered from the registry row's `model` string via
-    /// `OuraRingGen.from(model:)`; the 16-byte install key is read from the Keychain via `OuraKeyStore`
-    /// (nil → the source drives its HONEST `needsPairing` path and streams nothing, never a fake value).
-    private func startOuraSource(id: String) {
-        let ringGen = OuraRingGen.from(model: model(for: id) ?? "")
-        // Adopt consent is consumed for exactly this start: only the session the user explicitly granted may
-        // install a key (s3.2). Clearing it here means a later reconnect of the SAME ring is a normal
-        // read-only session that re-authenticates with the now-stored key and never re-installs.
-        let adoptIntent = (pendingAdoptDeviceId == id)
-        pendingAdoptDeviceId = nil
-        let source = OuraLiveSource(
-            live: live,
-            deviceId: id,
-            ringGen: ringGen,
-            authKey: { OuraKeyStore.read(deviceId: id) },
-            persist: { [storeHandle] streams in
-                Task { if let store = await storeHandle() { _ = try? await store.insert(streams, deviceId: id) } }
-            },
-            log: straplog,
-            onBattery: { [live] pct in live.setBattery(Double(pct)) },
-            adoptIntent: adoptIntent)
-        if adoptIntent { straplog("Oura: adopt consent granted - this session may install NOOP's key") }
-        if let pid = peripheralId(for: id), let uuid = UUID(uuidString: pid) {
-            source.connect(uuid)
-        } else {
-            source.scan()
-        }
-        ouraSource = source
-    }
-
-    /// Grant explicit adopt consent for `deviceId` so the NEXT live Oura session for it (started when it
-    /// becomes the active device) may run the dangerous key install (s3.2). Called by the wizard AFTER its
-    /// irreversible-consent gate + "Take over this ring?" confirm, immediately before the ring is registered
-    /// active. Per OURA_PROTOCOL.md s3.2 the install is a one-time, consent-gated provisioning write.
-    func requestOuraAdopt(deviceId: String) {
-        pendingAdoptDeviceId = deviceId
-    }
-
-    /// Stop whichever non-WHOOP source (standard strap, FTMS machine, Huami device, or Oura ring) is live,
-    /// and drop the reference. Idempotent. Exactly one is ever live, but we stop all defensively.
+    /// Stop whichever non-WHOOP source (standard strap) is live, and drop the reference.
     private func tearDownNonWhoopSource() {
         standardSource?.stop(); standardSource = nil
-        ftmsSource?.stop(); ftmsSource = nil
-        huamiSource?.stop(); huamiSource = nil
-        ouraSource?.stop(); ouraSource = nil
     }
 
     // MARK: - Identity adoption

@@ -69,11 +69,11 @@ final class ImportTraceTests: XCTestCase {
 
     func testFailingFileSampleMasksAndCaps() {
         let raw = "Heart rate variability (ms),Recovery score %\n62,88\n"
-        let lines = ImportTrace.failingFileSampleLines(sourceKind: .ouraImport, rawSample: raw)
+        let lines = ImportTrace.failingFileSampleLines(sourceKind: .fitbitImport, rawSample: raw)
         XCTAssertEqual(lines.count, 1)
         let s = lines[0]
         // The structure (the comma delimiter, the parens) survives; every letter/digit is masked.
-        XCTAssertTrue(s.hasPrefix("import failingFileSample kind=ouraImport "))
+        XCTAssertTrue(s.hasPrefix("import failingFileSample kind=fitbitImport "))
         XCTAssertTrue(s.contains("sample=["))
         XCTAssertFalse(s.contains("Heart"))
         XCTAssertFalse(s.contains("62"))
