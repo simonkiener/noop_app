@@ -67,5 +67,10 @@ enum PuffinExperiment {
     /// detection and hides the card. Default OFF. Mirrors the Android `NoopPrefs.KEY_AUTO_DETECT_WORKOUTS`.
     static let autoDetectWorkoutsKey = "noopAutoDetectWorkouts"
 
-    static var autoDetectWorkoutsEnabled: Bool { UserDefaults.standard.bool(forKey: autoDetectWorkoutsKey) }
+    static var autoDetectWorkoutsEnabled: Bool {
+        if UserDefaults.standard.object(forKey: autoDetectWorkoutsKey) == nil {
+            return true
+        }
+        return UserDefaults.standard.bool(forKey: autoDetectWorkoutsKey)
+    }
 }

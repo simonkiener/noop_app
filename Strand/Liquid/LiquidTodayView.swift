@@ -192,6 +192,7 @@ struct LiquidTodayView: View {
                     scene
                     healthAndStressMonitorSection
                     myDaySection
+                    AutoWorkoutCard()
                     todaysActivitiesSection
                     heartRateSection
                     yourCardsSection
@@ -512,6 +513,7 @@ struct LiquidTodayView: View {
                         score: restScore.map { String(format: "%.0f%%", $0) } ?? "–",
                         title: "SLEEP",
                         subtitle: sleepTimeRange,
+                        duration: sleepDuration,
                         tint: StrandPalette.restColor
                     )
                 }
@@ -536,6 +538,7 @@ struct LiquidTodayView: View {
                         score: effortText(w.strain),
                         title: WorkoutSource.displaySport(w.sport).uppercased(),
                         subtitle: workoutTimeRange(w),
+                        duration: workoutDuration(w),
                         tint: StrandPalette.effortColor
                     )
                 }
@@ -552,7 +555,7 @@ struct LiquidTodayView: View {
         }
     }
 
-    private func activityCard(sfSymbol: String, score: String, title: String, subtitle: String, tint: Color) -> some View {
+    private func activityCard(sfSymbol: String, score: String, title: String, subtitle: String, duration: String? = nil, tint: Color) -> some View {
         card {
             HStack(spacing: 12) {
                 Image(systemName: sfSymbol)
@@ -565,6 +568,10 @@ struct LiquidTodayView: View {
                         .foregroundStyle(StrandPalette.textPrimary)
                     Text(subtitle).font(StrandFont.caption)
                         .foregroundStyle(StrandPalette.textTertiary)
+                    if let dur = duration {
+                        Text(dur).font(StrandFont.caption)
+                            .foregroundStyle(tint.opacity(0.8))
+                    }
                 }
                 Spacer(minLength: 8)
                 Text(score).font(StrandFont.number(17))
@@ -589,6 +596,15 @@ struct LiquidTodayView: View {
         return String(format: "%dh %02dm", Int(m) / 60, Int(m) % 60)
     }
 
+    private var sleepDuration: String? {
+        if let s = sleepSession {
+            let totalMin = Int((s.endTs - s.effectiveStartTs) / 60)
+            return String(format: "%dh %02dm", totalMin / 60, totalMin % 60)
+        }
+        guard let m = displayDay?.totalSleepMin else { return nil }
+        return String(format: "%dh %02dm", Int(m) / 60, Int(m) % 60)
+    }
+
     private func workoutTimeRange(_ w: WorkoutRow) -> String {
         let df = DateFormatter()
         df.locale = Locale(identifier: "en_US_POSIX")
@@ -596,6 +612,14 @@ struct LiquidTodayView: View {
         let start = df.string(from: Date(timeIntervalSince1970: TimeInterval(w.startTs)))
         let end = df.string(from: Date(timeIntervalSince1970: TimeInterval(w.endTs)))
         return "\(start) – \(end)"
+    }
+
+    private func workoutDuration(_ w: WorkoutRow) -> String {
+        let totalMin = Int((w.endTs - w.startTs) / 60)
+        if totalMin < 60 {
+            return "\(totalMin)m"
+        }
+        return String(format: "%dh %02dm", totalMin / 60, totalMin % 60)
     }
 
 
