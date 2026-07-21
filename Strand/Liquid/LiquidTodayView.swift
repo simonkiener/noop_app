@@ -33,6 +33,10 @@ struct LiquidTodayView: View {
     @State private var stepsEst: Double?           // steps_est, day-keyed to the selected day (fallback)
     @State private var hrValues: [Double] = []     // hrBuckets since midnight → 5-min means
     @State private var workouts: [WorkoutRow] = [] // newest-first
+    /// Recommended strain range for today, on the internal 0–100 scale. Nil when insufficient history.
+    @State private var strainRecommendation: (low: Double, high: Double)? = nil
+    /// The sleep session for the selected day — used to show start/end times in Today's Activities.
+    @State private var sleepSession: CachedSleepSession? = nil
 
     // sheets / expanders
     @State private var guideSection: ScoreSection?
@@ -184,14 +188,16 @@ struct LiquidTodayView: View {
 
                 liquidRefreshIndicator   // grows in the revealed space; a vessel filling with the pull
 
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 14) {
                     scene
+                    healthAndStressMonitorSection
+                    myDaySection
+                    todaysActivitiesSection
                     heartRateSection
                     yourCardsSection
                     synthesisSection
                     recoveryVitalsSection
                     keyMetricsSection
-                    lastWorkoutsSection
                     dataSourcesSection
                     Color.clear.frame(height: 90) // floating tab-bar clearance
                 }
@@ -301,53 +307,297 @@ struct LiquidTodayView: View {
 
     private var scene: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top) {
-                Button { showDayPicker = true } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(dayTitle)
-                            .font(StrandFont.rounded(28))
-                            .foregroundStyle(.white)
-                            .shadow(color: .black.opacity(0.4), radius: 10, y: 1)
-                        Text(dateLine)
-                            .font(StrandFont.caption)
-                            .foregroundStyle(.white.opacity(0.78))
-                            .shadow(color: .black.opacity(0.35), radius: 8, y: 1)
+            HStack(alignment: .center) {
+                // Profile Avatar (left)
+                Button { showSettings = true } label: {
+                    ProfileAvatarView(imageData: profile.avatarImageData, size: 34)
+                        .frame(width: 34, height: 34)
+                }
+                .buttonStyle(LiquidPressStyle())
+                .accessibilityLabel("Profile and settings")
+
+                Spacer()
+
+                // Centered < TODAY > Pill Switcher
+                HStack(spacing: 6) {
+                    Button {
+                        if selectedDayOffset < earliestDayOffset {
+                            withAnimation(StrandMotion.interactive) { selectedDayOffset += 1 }
+                        }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(selectedDayOffset < earliestDayOffset ? StrandPalette.textPrimary : StrandPalette.textTertiary)
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
                     }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(dayTitle). Tap to pick a day, swipe to change day.")
-                .popover(isPresented: $showDayPicker) {
-                    DatePicker("", selection: dayPickerBinding, in: ...Repository.logicalDay(Date()),
-                               displayedComponents: [.date])
-                        .datePickerStyle(.graphical)
-                        .labelsHidden()
-                        .padding(12)
-                        .frame(minWidth: 320, minHeight: 360)
-                        .liquidPopoverAdaptation()
-                }
-                Spacer(minLength: 8)
-                HStack(spacing: 8) {
-                    // Profile pic (the one set in Settings) → opens Settings, matching the classic Today.
-                    Button { showSettings = true } label: {
-                        ProfileAvatarView(imageData: profile.avatarImageData, size: 34)
-                            .frame(width: 34, height: 34)
+                    .buttonStyle(.plain)
+                    .disabled(selectedDayOffset >= earliestDayOffset)
+
+                    Button { showDayPicker = true } label: {
+                        Text(dayTitle.uppercased())
+                            .font(StrandFont.rounded(13, weight: .bold))
+                            .tracking(1.2)
+                            .foregroundStyle(StrandPalette.textPrimary)
+                            .lineLimit(1)
+                            .frame(minWidth: 120)   // fixed width so chevrons never jump
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(
+                                Capsule()
+                                    .fill(StrandPalette.surfaceOverlay)
+                                    .overlay(Capsule().strokeBorder(StrandPalette.hairline, lineWidth: 1))
+                            )
                     }
-                    .buttonStyle(LiquidPressStyle())
-                    .accessibilityLabel("Profile and settings")
-                    LiquidBatteryButton()
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showDayPicker) {
+                        DatePicker("", selection: dayPickerBinding, in: ...Repository.logicalDay(Date()),
+                                   displayedComponents: [.date])
+                            .datePickerStyle(.graphical).labelsHidden().padding(12)
+                            .frame(minWidth: 320, minHeight: 360)
+                            .liquidPopoverAdaptation()
+                    }
+
+                    Button {
+                        if selectedDayOffset > 0 {
+                            withAnimation(StrandMotion.interactive) { selectedDayOffset -= 1 }
+                        }
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(selectedDayOffset > 0 ? StrandPalette.textPrimary : StrandPalette.textTertiary)
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(selectedDayOffset <= 0)
                 }
+
+                Spacer()
+
+                // Battery / Strap (right)
+                LiquidBatteryButton()
             }
-            // Subtle NOOP wordmark in the sky between header and hero. Perfectly centred (a letter row has
-            // no trailing tracking gap the way `Text(...).tracking()` does), with a tap easter egg.
-            LiquidWordmark()
-                .padding(.top, 30)
-            heroCard.padding(.top, 22)
+            heroCard.padding(.top, 16)
             if liveSessionsBeta {
-                liveSessionStartRow.padding(.top, 10)
+                liveSessionStartRow.padding(.top, 8)
             }
         }
     }
+
+    // MARK: - Health & Stress Monitor
+
+    private var healthAndStressMonitorSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("MONITORS").font(StrandFont.overline).tracking(1.6)
+                .foregroundStyle(StrandPalette.textTertiary)
+                .padding(.horizontal, 2)
+
+            HStack(spacing: 8) {
+                // Health Monitor card
+                NavigationLink { HealthView() } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("HEALTH MONITOR").font(StrandFont.overlineScaled(10)).tracking(1.1)
+                                .foregroundStyle(StrandPalette.textTertiary)
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(StrandPalette.textTertiary)
+                        }
+                        HStack(spacing: 5) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(StrandPalette.restColor)
+                            Text("WITHIN RANGE").font(StrandFont.overlineScaled(10)).tracking(0.8)
+                                .foregroundStyle(StrandPalette.restColor)
+                        }
+                        Text("4/4 Metrics").font(StrandFont.caption)
+                            .foregroundStyle(StrandPalette.textSecondary)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(StrandPalette.surfaceRaised)
+                            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .strokeBorder(StrandPalette.hairline, lineWidth: 1))
+                    )
+                }
+                .buttonStyle(LiquidPressStyle())
+
+                // Stress Monitor card
+                NavigationLink { StressView() } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("STRESS MONITOR").font(StrandFont.overlineScaled(10)).tracking(1.1)
+                                .foregroundStyle(StrandPalette.textTertiary)
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(StrandPalette.textTertiary)
+                        }
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text(stress.map { String(format: "%.1f", $0) } ?? "–")
+                                .font(StrandFont.number(22))
+                                .foregroundStyle(StrandPalette.textPrimary)
+                            Text(stressLevelLabel).font(StrandFont.overlineScaled(10)).tracking(0.8)
+                                .foregroundStyle(stressLevelColor)
+                        }
+                        Text("Stress score").font(StrandFont.caption)
+                            .foregroundStyle(StrandPalette.textSecondary)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(StrandPalette.surfaceRaised)
+                            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .strokeBorder(StrandPalette.hairline, lineWidth: 1))
+                    )
+                }
+                .buttonStyle(LiquidPressStyle())
+            }
+        }
+    }
+
+    private var stressLevelLabel: String {
+        guard let s = stress else { return "" }
+        if s < 1.0 { return "LOW" }
+        if s < 2.0 { return "MEDIUM" }
+        return "HIGH"
+    }
+    private var stressLevelColor: Color {
+        guard let s = stress else { return StrandPalette.textTertiary }
+        if s < 1.0 { return StrandPalette.restColor }
+        if s < 2.0 { return StrandPalette.chargeColor }
+        return StrandPalette.metricRose
+    }
+
+    // MARK: - My Day
+
+    private var myDaySection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("MY DAY").font(StrandFont.overline).tracking(1.6)
+                .foregroundStyle(StrandPalette.textTertiary)
+                .padding(.horizontal, 2)
+
+            card {
+                HStack {
+                    Text("🌅").font(.system(size: 18))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Daily Outlook").font(StrandFont.subhead)
+                            .foregroundStyle(StrandPalette.textPrimary)
+                        Text(synthLine).font(StrandFont.caption)
+                            .foregroundStyle(StrandPalette.textSecondary)
+                            .lineLimit(2)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(StrandPalette.textTertiary)
+                }
+            }
+        }
+    }
+
+    // MARK: - Today's Activities
+
+    private var todaysActivitiesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionHead("TODAY'S ACTIVITIES", trailing: "\(workouts.count + (displayDay?.totalSleepMin != nil ? 1 : 0)) total")
+
+            // Sleep activity card
+            if displayDay?.totalSleepMin != nil {
+                NavigationLink { SleepView() } label: {
+                    activityCard(
+                        sfSymbol: "moon.zzz.fill",
+                        score: restScore.map { String(format: "%.0f%%", $0) } ?? "–",
+                        title: "SLEEP",
+                        subtitle: sleepTimeRange,
+                        tint: StrandPalette.restColor
+                    )
+                }
+                .buttonStyle(LiquidPressStyle())
+            } else {
+                card {
+                    HStack(spacing: 12) {
+                        Image(systemName: "moon.zzz.fill")
+                            .font(.system(size: 17))
+                            .foregroundStyle(StrandPalette.restColor)
+                        Text("No sleep recorded").font(StrandFont.subhead)
+                            .foregroundStyle(StrandPalette.textTertiary)
+                    }
+                }
+            }
+
+            // Workout activity cards
+            ForEach(workouts, id: \.startTs) { w in
+                NavigationLink { WorkoutsView() } label: {
+                    activityCard(
+                        sfSymbol: sportSymbol(w.sport ?? ""),
+                        score: effortText(w.strain),
+                        title: WorkoutSource.displaySport(w.sport).uppercased(),
+                        subtitle: workoutTimeRange(w),
+                        tint: StrandPalette.effortColor
+                    )
+                }
+                .buttonStyle(LiquidPressStyle())
+            }
+
+            if workouts.isEmpty && displayDay?.totalSleepMin == nil {
+                card {
+                    Text("No activities recorded")
+                        .font(StrandFont.subhead).foregroundStyle(StrandPalette.textTertiary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    private func activityCard(sfSymbol: String, score: String, title: String, subtitle: String, tint: Color) -> some View {
+        card {
+            HStack(spacing: 12) {
+                Image(systemName: sfSymbol)
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(tint)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(tint.opacity(0.14)))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(StrandFont.overlineScaled(11)).tracking(1.0)
+                        .foregroundStyle(StrandPalette.textPrimary)
+                    Text(subtitle).font(StrandFont.caption)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                }
+                Spacer(minLength: 8)
+                Text(score).font(StrandFont.number(17))
+                    .foregroundStyle(StrandPalette.textPrimary)
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(StrandPalette.textTertiary)
+            }
+        }
+    }
+
+    private var sleepTimeRange: String {
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.dateFormat = "HH:mm"
+        if let s = sleepSession {
+            let start = df.string(from: Date(timeIntervalSince1970: TimeInterval(s.effectiveStartTs)))
+            let end   = df.string(from: Date(timeIntervalSince1970: TimeInterval(s.endTs)))
+            return "\(start) – \(end)"
+        }
+        // Fallback: show duration if no session timestamps available
+        guard let m = displayDay?.totalSleepMin else { return "" }
+        return String(format: "%dh %02dm", Int(m) / 60, Int(m) % 60)
+    }
+
+    private func workoutTimeRange(_ w: WorkoutRow) -> String {
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.dateFormat = "HH:mm"
+        let start = df.string(from: Date(timeIntervalSince1970: TimeInterval(w.startTs)))
+        let end = df.string(from: Date(timeIntervalSince1970: TimeInterval(w.endTs)))
+        return "\(start) – \(end)"
+    }
+
 
     /// One-tap Live Session start (silent guardian, beta) — sits directly under the hero scores, the
     /// Charge its band is gated on. Same translucent chrome as the hero card so it reads as part of the
@@ -387,12 +637,13 @@ struct LiquidTodayView: View {
     private var heroCard: some View {
         HStack(alignment: .top, spacing: 4) {
             HeroScoreCell(label: "Sleep", score: restScore, tint: StrandPalette.restColor,
-                          pill: "WHOOP", animated: dataLoaded, onGuide: { guideSection = .rest })
+                          pill: "WHOOP", recommendation: nil, animated: dataLoaded, onGuide: { guideSection = .rest })
             HeroScoreCell(label: "Recovery", score: displayDay?.recovery,
                           tint: displayDay?.recovery.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.chargeColor,
-                          pill: "WHOOP", animated: dataLoaded, onGuide: { guideSection = .charge })
+                          pill: "WHOOP", recommendation: nil, animated: dataLoaded, onGuide: { guideSection = .charge })
             HeroScoreCell(label: "Strain", score: displayDay?.strain, tint: StrandPalette.effortColor,
-                          pill: nil, animated: dataLoaded, onGuide: { guideSection = .effort })
+                          pill: nil, recommendation: strainRecommendation, animated: dataLoaded,
+                          onGuide: { guideSection = .effort })
         }
         .padding(.vertical, 16)
         .padding(.horizontal, 12)
@@ -839,7 +1090,23 @@ struct LiquidTodayView: View {
         let stepsByDay = Dictionary(stepsSeries.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
         stepsEst = stepsByDay[selectedDayKey] ?? (selectedDayOffset == 0 ? stepsSeries.last?.value : nil)
         hrValues = (await hrA).map { $0.bpm }
-        workouts = await wkA
+        // Filter workouts to only those that START on the selected logical day.
+        // Without this, all workouts from the full history were shown (Bug: #TODAY-DAY-FILTER).
+        let cal2 = Calendar.current
+        let dayStart2 = cal2.startOfDay(for: selectedLogicalDay)
+        let dayEnd2 = cal2.date(byAdding: .day, value: 1, to: dayStart2) ?? dayStart2
+        let dayStartTs = Int(dayStart2.timeIntervalSince1970)
+        let dayEndTs = Int(dayEnd2.timeIntervalSince1970)
+        workouts = (await wkA).filter { $0.startTs >= dayStartTs && $0.startTs < dayEndTs }
+        // Sleep session for the selected day: filter repo.sleeps by sessions that END within the day
+        // window (WHOOP keys sleep to the wake day, so endTs falls on the logical day).
+        // Pick the longest session if multiple exist (main sleep wins over a nap).
+        let daySleeps = repo.sleeps.filter { $0.endTs >= dayStartTs && $0.endTs < dayEndTs }
+        sleepSession = daySleeps.max(by: { ($0.endTs - $0.effectiveStartTs) < ($1.endTs - $1.effectiveStartTs) })
+        // Strain recommendation: only meaningful for today (a past day's recommendation would be historical).\n        // Run on the daysSnapshot already captured above so no second repo scan is needed.
+        strainRecommendation = selectedDayOffset == 0
+            ? ReadinessEngine.strainRecommendation(recovery: cachedDisplayDay?.recovery, days: daysSnapshot)
+            : nil
 
         // First load done — bring the hero gauges + sky to life now the launch churn has settled.
         if !dataLoaded { withAnimation(.easeIn(duration: 0.4)) { dataLoaded = true } }
@@ -1032,6 +1299,8 @@ private struct HeroScoreCell: View {
     let score: Double?            // 0–100 (nil = no data yet)
     let tint: Color
     let pill: String?
+    /// Optional strain recommendation range on the internal 0–100 scale. Shown only for Strain.
+    let recommendation: (low: Double, high: Double)?
     let animated: Bool
     let onGuide: () -> Void
 
@@ -1061,8 +1330,33 @@ private struct HeroScoreCell: View {
             ZStack {
                 LiquidVessel(value: frac, tint: tint, animated: animated)
                     .frame(width: 96, height: 96)
+                // White target-tick overlay — drawn at the midpoint of the recommendation range,
+                // a short radial dash on the ring edge, matching the WHOOP app marker style.
+                if let rec = recommendation, isEffort {
+                    Canvas { ctx, size in
+                        let r = size.width / 2
+                        let strokeW = max(2.5, size.width * 0.082)
+                        let midFrac = CGFloat((rec.low + rec.high) / 2 / 100.0)
+                        // Ring starts at -90° (top) and goes clockwise.
+                        let angle = (midFrac - 0.25) * 2 * .pi   // -90° offset in radians
+                        let innerR = r - strokeW * 0.55
+                        let outerR = r + strokeW * 0.15
+                        let cx = r, cy = r
+                        let x1 = cx + innerR * cos(angle)
+                        let y1 = cy + innerR * sin(angle)
+                        let x2 = cx + outerR * cos(angle)
+                        let y2 = cy + outerR * sin(angle)
+                        var path = Path()
+                        path.move(to: CGPoint(x: x1, y: y1))
+                        path.addLine(to: CGPoint(x: x2, y: y2))
+                        ctx.stroke(path, with: .color(.white.opacity(0.92)),
+                                   style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    }
+                    .frame(width: 96, height: 96)
+                    .allowsHitTesting(false)
+                }
                 Group {
-                    if let displayValue {
+                    if displayValue != nil {
                         CountUpNumber(
                             value: shown,
                             font: StrandFont.rounded(26),
@@ -1108,6 +1402,17 @@ private struct HeroScoreCell: View {
         guard let v else { shown = 0; return }
         let target = isEffort ? UnitFormatter.effortValue(v, scale: effortScale) : v
         withAnimation(.easeOut(duration: 0.9)) { shown = target }   // counts up in step with the vessel filling
+    }
+
+    /// Format the recommendation range onto the current display scale.
+    private func recommendationLabel(_ rec: (low: Double, high: Double)) -> String {
+        let lo = UnitFormatter.effortValue(rec.low, scale: effortScale)
+        let hi = UnitFormatter.effortValue(rec.high, scale: effortScale)
+        if effortScale == .whoop {
+            return String(format: "aim %.0f–%.0f", lo, hi)
+        } else {
+            return String(format: "aim %.0f–%.0f", lo, hi)
+        }
     }
 }
 

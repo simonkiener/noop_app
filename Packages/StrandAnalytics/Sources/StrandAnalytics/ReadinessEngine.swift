@@ -311,4 +311,44 @@ public enum ReadinessEngine {
         let ss = xs.reduce(0) { $0 + ($1 - m) * ($1 - m) }
         return (ss / Double(xs.count - 1)).squareRoot()
     }
+
+    // MARK: - Strain recommendation
+
+    /// Returns a recommended daily strain range `(low, high)` on the app's internal **0–100** scale
+    /// (same scale `DailyMetric.strain` is stored in). Convert to the display scale via
+    /// `UnitFormatter.effortValue(_:scale:)` before showing to the user.
+    ///
+    /// **Formula (sports-science basis):**
+    /// - Baseline = 28-day average strain (chronic load) — the load your body is adapted to.
+    /// - Recovery factor = `recovery / 100` — high recovery → push toward full chronic load.
+    /// - ACWR guard: if the 7d/28d ratio is already high (> 1.3) we cap the recommendation so
+    ///   we don't pile on a spike; if it's low (< 0.8) we allow a gentle bump above the base.
+    /// - Range = ±15 % of the recommended midpoint, rounded to 1 decimal.
+    ///
+    /// Returns `nil` when there is not enough history (< 14 days of strain) or recovery is unavailable.
+    public static func strainRecommendation(recovery: Double?, days: [DailyMetric]) -> (low: Double, high: Double)? {
+        guard let recovery else { return nil }
+        let strainSeries = days.sorted { $0.day < $1.day }.compactMap { $0.strain }
+        guard strainSeries.count >= minChronic,
+              let chronic = mean(Array(strainSeries.suffix(chronicWindow))),
+              chronic > 0 else { return nil }
+
+        let recoveryFactor = max(0.1, min(1.0, recovery / 100.0))
+
+        // ACWR correction: gentle ramp-up when under-loaded, safety cap when over-loaded.
+        let acute = mean(Array(strainSeries.suffix(acuteWindow))) ?? chronic
+        let ratio = chronic > 0 ? acute / chronic : 1.0
+        let acwrFactor: Double
+        switch ratio {
+        case ..<0.7:    acwrFactor = 1.15  // under-loaded → encourage building
+        case 0.7..<0.8: acwrFactor = 1.08
+        case 0.8..<1.3: acwrFactor = 1.00 // sweet spot → no correction
+        case 1.3..<1.5: acwrFactor = 0.88 // ramping fast → ease back
+        default:        acwrFactor = 0.75  // spiking → recommend lighter day
+        }
+
+        let mid = chronic * recoveryFactor * acwrFactor
+        let halfRange = mid * 0.15
+        return (low: max(0, mid - halfRange), high: min(100, mid + halfRange))
+    }
 }
